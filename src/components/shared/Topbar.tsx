@@ -6,7 +6,7 @@ import { useProfileStore } from '@/store/useProfileStore'
 import { calculateOCS } from '@/shared/ocs'
 import { Bell, ChevronDown, Users, LogOut, Settings } from 'lucide-react'
 import { ThemeToggle } from '@/components/shared/ThemeToggle'
-import { getSupabaseBrowser } from '@/shared/supabase-browser'
+import { getSession, signOut as authSignOut } from '@/shared/auth-client'
 
 interface TopbarProps {
   title: string
@@ -33,21 +33,14 @@ export function Topbar({ title, forceDemo = false }: TopbarProps) {
       setAuthChecked(true)
       return
     }
-    const check = async () => {
-      try {
-        const supabase = getSupabaseBrowser()
-        const { data: { session } } = await supabase.auth.getSession()
-        if (session?.user) {
-          setAuthUser({
-            name: (session.user.user_metadata?.display_name as string) || session.user.email || '',
-            email: session.user.email || '',
-          })
-        }
-      } finally {
-        setAuthChecked(true)
-      }
+    const session = getSession()
+    if (session?.user) {
+      setAuthUser({
+        name: session.user.display_name || session.user.email || '',
+        email: session.user.email || '',
+      })
     }
-    check()
+    setAuthChecked(true)
   }, [forceDemo])
 
   // Close profile dropdown on outside click
@@ -61,9 +54,8 @@ export function Topbar({ title, forceDemo = false }: TopbarProps) {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
-  const handleLogout = async () => {
-    const supabase = getSupabaseBrowser()
-    await supabase.auth.signOut()
+  const handleLogout = () => {
+    authSignOut()
     router.push('/login')
   }
 

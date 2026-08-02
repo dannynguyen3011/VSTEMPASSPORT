@@ -7,73 +7,51 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { and, eq, gte, sql } from 'drizzle-orm'
-import { db, schema } from '@/backend/db'
+import { connectDB } from '@/backend/db/mongoose'
+import { Opportunity } from '@/backend/db/models'
 import { requireAuth, isAdmin } from '@/backend/auth'
 
 export async function GET(req: NextRequest) {
   try {
     await requireAuth(req)
+    await connectDB()
 
     const { searchParams } = new URL(req.url)
 
-    // Build filter conditions
-    const conditions = [
-      // Only show admin-verified entries (BA §2.6.1)
-      eq(schema.opportunities.admin_verified, true),
-    ]
+    // Only show admin-verified entries (BA §2.6.1)
+    const filter: Record<string, unknown> = { admin_verified: true }
 
     // Hide past deadlines (BA §2.6.1: "Ẩn entry nếu deadline đã qua")
     const upcomingOnly = searchParams.get('upcoming_only') !== 'false'
     if (upcomingOnly) {
-      conditions.push(gte(schema.opportunities.deadline, new Date()))
+      filter.deadline = { $gte: new Date() }
     }
 
     if (searchParams.get('type')) {
-      conditions.push(
-        eq(
-          schema.opportunities.type,
-          searchParams.get('type') as 'competition' | 'scholarship' | 'workshop' | 'summer_program'
-        )
-      )
+      filter.type = searchParams.get('type')
     }
 
     if (searchParams.get('scope')) {
-      conditions.push(
-        eq(
-          schema.opportunities.scope,
-          searchParams.get('scope') as 'international' | 'national' | 'regional'
-        )
-      )
+      filter.scope = searchParams.get('scope')
     }
 
     if (searchParams.get('is_free') !== null) {
-      conditions.push(
-        eq(schema.opportunities.is_free, searchParams.get('is_free') === 'true')
-      )
+      filter.is_free = searchParams.get('is_free') === 'true'
     }
 
     if (searchParams.get('is_online') !== null) {
-      conditions.push(
-        eq(schema.opportunities.is_online, searchParams.get('is_online') === 'true')
-      )
+      filter.is_online = searchParams.get('is_online') === 'true'
     }
 
     // field_tag filter (any match in the array)
     const fieldTag = searchParams.get('field_tag')
     if (fieldTag) {
-      conditions.push(
-        sql`${schema.opportunities.field_tags} @> ARRAY[${fieldTag}]::text[]`
-      )
+      filter.field_tags = fieldTag
     }
 
-    const rows = await db
-      .select()
-      .from(schema.opportunities)
-      .where(and(...conditions))
-      .orderBy(schema.opportunities.deadline)
+    const opportunities = await Opportunity.find(filter).sort({ deadline: 1 })
 
-    return NextResponse.json(rows)
+    return NextResponse.json(opportunities)
   } catch (e) {
     if (e instanceof Response) return e
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -100,6 +78,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
+    await connectDB()
     const body = await req.json()
     const parsed = createOpportunitySchema.safeParse(body)
 
@@ -108,9 +87,10 @@ export async function POST(req: NextRequest) {
     }
 
     const d = parsed.data
-    const [inserted] = await db
-      .insert(schema.opportunities)
-      .values({
+
+    let inserted
+    try {
+      inserted = await Opportunity.create({
         name: d.name,
         type: d.type,
         field_tags: d.field_tags,
@@ -122,7 +102,13 @@ export async function POST(req: NextRequest) {
         description: d.description,
         admin_verified: false, // requires explicit approval
       })
-      .returning()
+    } catch (err: unknown) {
+      const mongoErr = err as { code?: number }
+      if (mongoErr?.code === 11000) {
+        return NextResponse.json({ error: 'Một cơ hội với source_url này đã tồn tại.' }, { status: 409 })
+      }
+      throw err
+    }
 
     return NextResponse.json(inserted, { status: 201 })
   } catch (e) {

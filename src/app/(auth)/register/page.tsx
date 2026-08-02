@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Leaf, Eye, EyeOff, ArrowRight, AlertCircle, CheckCircle, ArrowLeft } from 'lucide-react'
-import { getSupabaseBrowser } from '@/shared/supabase-browser'
+import { signUp } from '@/shared/auth-client'
 import { ThemeToggle } from '@/components/shared/ThemeToggle'
 
 const PERKS = [
@@ -83,62 +83,23 @@ export default function RegisterPage() {
 
     setLoading(true)
     try {
-      const supabase = getSupabaseBrowser()
-
-      // Sign up WITHOUT email confirmation (emailRedirectTo omitted)
-      const { data, error: authError } = await supabase.auth.signUp({
+      const { error: registerError } = await signUp({
         email,
         password,
-        options: {
-          // Store profile data in user metadata so the DB trigger / API can pick it up
-          data: {
-            display_name: displayName,
-            grade,
-            school_name: schoolName,
-            province,
-            target_major: targetMajor,
-          },
-        },
+        username: username || undefined,
+        display_name: displayName,
+        grade,
+        school_name: schoolName,
+        province,
+        target_major: targetMajor,
       })
 
-      if (authError) {
-        setError(
-          authError.message.includes('already registered')
-            ? 'Email này đã được đăng ký. Vui lòng đăng nhập.'
-            : authError.message
-        )
+      if (registerError) {
+        setError(registerError)
         return
       }
 
-      // If Supabase email confirmation is disabled in the dashboard,
-      // the session is returned immediately — redirect straight to onboarding.
-      if (data.session) {
-        // Create the user profile row in our DB via the API
-        const profileRes = await fetch('/api/profile', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${data.session.access_token}`,
-          },
-          body: JSON.stringify({
-            display_name: displayName,
-            grade,
-            school_name: schoolName,
-            province,
-            target_major: targetMajor,
-            username: username || undefined,
-          }),
-        })
-        if (!profileRes.ok) {
-          const body = await profileRes.json().catch(() => ({}))
-          setError(body?.error ?? 'Không thể tạo hồ sơ. Vui lòng thử lại.')
-          return
-        }
-        router.push('/dashboard')
-      } else {
-        // Email confirmation is still enabled → show message
-        router.push('/login?registered=1')
-      }
+      router.push('/dashboard')
     } finally {
       setLoading(false)
     }

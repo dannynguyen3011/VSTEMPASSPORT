@@ -20,7 +20,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { Plus, Star, Trash2 } from 'lucide-react'
 import type { ActivityCategory, Activity, TrustTier } from '@/types'
-import { getSupabaseBrowser } from '@/shared/supabase-browser'
+import { getSession } from '@/shared/auth-client'
 
 const CATEGORIES: { value: ActivityCategory; label: string }[] = [
   { value: 'scholarship', label: 'Học bổng' },
@@ -130,8 +130,7 @@ export default function PortfolioPage() {
 
     // POST lên server trước → nhận activity với DB-backed activity_id
     try {
-      const supabase = getSupabaseBrowser()
-      const { data: { session } } = await supabase.auth.getSession()
+      const session = getSession()
       if (!session) {
         setSuccessMsg('Phiên đăng nhập đã hết hạn. Hãy login lại.')
         setTimeout(() => setSuccessMsg(''), 3000)

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { Topbar } from '@/components/shared/Topbar'
 import { useProfileStore } from '@/store/useProfileStore'
-import { getSupabaseBrowser } from '@/shared/supabase-browser'
+import { getSession } from '@/shared/auth-client'
 import { CheckCircle, AlertCircle, Save, Lock } from 'lucide-react'
 
 const PROVINCES = [
@@ -42,15 +42,10 @@ export default function ProfilePage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const check = async () => {
-      const supabase = getSupabaseBrowser()
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) {
-        setIsAuth(true)
-      }
-      setAuthChecked(true)
+    if (getSession()) {
+      setIsAuth(true)
     }
-    check()
+    setAuthChecked(true)
   }, [])
 
   // Keep form in sync if store updates (e.g. AuthDataLoader finishes)
@@ -83,8 +78,7 @@ export default function ProfilePage() {
     }
 
     try {
-      const { data: { session } } = await getSupabaseBrowser().auth.getSession()
-      const freshToken = session?.access_token
+      const freshToken = getSession()?.access_token
       if (!freshToken) {
         setError('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.')
         return

@@ -10,7 +10,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
-import { getSupabaseBrowser } from '@/shared/supabase-browser'
+import { getSession } from '@/shared/auth-client'
 
 type Props = {
   activityId: string
@@ -49,10 +49,7 @@ export function TrustVerifyDialog({ activityId, currentTier }: Props) {
     setLoading(true)
 
     try {
-      const supabase = getSupabaseBrowser()
-      const {
-        data: { session },
-      } = await supabase.auth.getSession()
+      const session = getSession()
       if (!session) {
         setError('Phiên đăng nhập đã hết hạn. Hãy login lại.')
         return

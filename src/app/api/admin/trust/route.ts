@@ -9,12 +9,14 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { eq, sql } from 'drizzle-orm'
-import { db, schema } from '@/backend/db'
+import { connectDB } from '@/backend/db/mongoose'
+import { Activity, AuditLog } from '@/backend/db/models'
 import { requireAuth, isAdmin } from '@/backend/auth'
 
+const OBJECT_ID_RE = /^[0-9a-fA-F]{24}$/
+
 const approveSchema = z.object({
-  activity_id: z.string().uuid(),
+  activity_id: z.string().regex(OBJECT_ID_RE, 'Invalid activity_id'),
   new_tier: z.union([z.literal(2), z.literal(3)]),
   verified_by: z.string().min(1),
 })
@@ -27,6 +29,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
+    await connectDB()
     const body = await req.json()
     const parsed = approveSchema.safeParse(body)
 
@@ -36,21 +39,18 @@ export async function PUT(req: NextRequest) {
 
     const { activity_id, new_tier, verified_by } = parsed.data
 
-    const [updated] = await db
-      .update(schema.activities)
-      .set({
-        trust_tier: new_tier,
-        trust_verified_by: verified_by,
-      })
-      .where(eq(schema.activities.activity_id, activity_id))
-      .returning()
+    const updated = await Activity.findByIdAndUpdate(
+      activity_id,
+      { trust_tier: new_tier, trust_verified_by: verified_by },
+      { new: true }
+    )
 
     if (!updated) {
       return NextResponse.json({ error: 'Activity not found' }, { status: 404 })
     }
 
     // Audit log (BA §3.5)
-    await db.insert(schema.auditLogs).values({
+    await AuditLog.create({
       entity_type: 'activity',
       entity_id: activity_id,
       action: `trust_tier${new_tier}_approved`,
@@ -81,11 +81,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
+    await connectDB()
+
     // Activities with 'pending:' prefix in trust_verified_by = awaiting admin review
-    const pending = await db
-      .select()
-      .from(schema.activities)
-      .where(sql`${schema.activities.trust_verified_by} LIKE 'pending:%'`)
+    const pending = await Activity.find({ trust_verified_by: /^pending:/ })
 
     return NextResponse.json(pending)
   } catch (e) {

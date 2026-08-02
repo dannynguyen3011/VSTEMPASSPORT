@@ -5,8 +5,9 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { and, eq } from 'drizzle-orm'
-import { db, schema } from '@/backend/db'
+import mongoose from 'mongoose'
+import { connectDB } from '@/backend/db/mongoose'
+import { Activity } from '@/backend/db/models'
 import { requireAuth } from '@/backend/auth'
 import { extractTechTags, scoreStar } from '@/backend/nlp-tagger'
 
@@ -29,22 +30,17 @@ export async function GET(req: NextRequest, { params }: Params) {
   try {
     const user = await requireAuth(req)
     const { activityId } = await params
+    await connectDB()
 
-    const rows = await db
-      .select()
-      .from(schema.activities)
-      .where(
-        and(
-          eq(schema.activities.activity_id, activityId),
-          eq(schema.activities.user_id, user.id)
-        )
-      )
-      .limit(1)
-
-    if (!rows.length) {
+    if (!mongoose.isValidObjectId(activityId)) {
       return NextResponse.json({ error: 'Activity not found' }, { status: 404 })
     }
-    return NextResponse.json(rows[0])
+
+    const activity = await Activity.findOne({ _id: activityId, user_id: user.id })
+    if (!activity) {
+      return NextResponse.json({ error: 'Activity not found' }, { status: 404 })
+    }
+    return NextResponse.json(activity)
   } catch (e) {
     if (e instanceof Response) return e
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -55,6 +51,12 @@ export async function PUT(req: NextRequest, { params }: Params) {
   try {
     const user = await requireAuth(req)
     const { activityId } = await params
+    await connectDB()
+
+    if (!mongoose.isValidObjectId(activityId)) {
+      return NextResponse.json({ error: 'Activity not found' }, { status: 404 })
+    }
+
     const body = await req.json()
     const parsed = updateSchema.safeParse(body)
 
@@ -63,17 +65,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     }
 
     // Fetch current row to merge with partial update
-    const [current] = await db
-      .select()
-      .from(schema.activities)
-      .where(
-        and(
-          eq(schema.activities.activity_id, activityId),
-          eq(schema.activities.user_id, user.id)
-        )
-      )
-      .limit(1)
-
+    const current = await Activity.findOne({ _id: activityId, user_id: user.id })
     if (!current) {
       return NextResponse.json({ error: 'Activity not found' }, { status: 404 })
     }
@@ -93,7 +85,7 @@ export async function PUT(req: NextRequest, { params }: Params) {
     )
     const base_score = scoreStar({ ...merged, tech_tags })
 
-    const updates: Record<string, unknown> = { tech_tags, base_score: base_score.toString() }
+    const updates: Record<string, unknown> = { tech_tags, base_score }
     if (d.category !== undefined) updates.category = d.category
     if (d.title !== undefined) updates.title = d.title
     if (d.star_situation !== undefined) updates.star_situation = d.star_situation
@@ -103,16 +95,23 @@ export async function PUT(req: NextRequest, { params }: Params) {
     if (d.slot_order !== undefined) updates.slot_order = d.slot_order
     if (d.artifact_url !== undefined) updates.artifact_url = d.artifact_url
 
-    const [updated] = await db
-      .update(schema.activities)
-      .set(updates)
-      .where(
-        and(
-          eq(schema.activities.activity_id, activityId),
-          eq(schema.activities.user_id, user.id)
-        )
+    let updated
+    try {
+      updated = await Activity.findOneAndUpdate(
+        { _id: activityId, user_id: user.id },
+        updates,
+        { new: true, runValidators: true }
       )
-      .returning()
+    } catch (err: unknown) {
+      const mongoErr = err as { code?: number }
+      if (mongoErr?.code === 11000) {
+        return NextResponse.json(
+          { error: `Slot ${d.slot_order} đã được sử dụng. Chọn slot khác.` },
+          { status: 409 }
+        )
+      }
+      throw err
+    }
 
     return NextResponse.json(updated)
   } catch (e) {
@@ -125,18 +124,15 @@ export async function DELETE(req: NextRequest, { params }: Params) {
   try {
     const user = await requireAuth(req)
     const { activityId } = await params
+    await connectDB()
 
-    const deleted = await db
-      .delete(schema.activities)
-      .where(
-        and(
-          eq(schema.activities.activity_id, activityId),
-          eq(schema.activities.user_id, user.id)
-        )
-      )
-      .returning()
+    if (!mongoose.isValidObjectId(activityId)) {
+      return NextResponse.json({ error: 'Activity not found' }, { status: 404 })
+    }
 
-    if (!deleted.length) {
+    const deleted = await Activity.findOneAndDelete({ _id: activityId, user_id: user.id })
+
+    if (!deleted) {
       return NextResponse.json({ error: 'Activity not found' }, { status: 404 })
     }
     return NextResponse.json({ success: true })

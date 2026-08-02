@@ -4,8 +4,8 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { eq, asc } from 'drizzle-orm'
-import { db, schema } from '@/backend/db'
+import { connectDB } from '@/backend/db/mongoose'
+import { Activity } from '@/backend/db/models'
 import { requireAuth } from '@/backend/auth'
 import { extractTechTags, scoreStar } from '@/backend/nlp-tagger'
 
@@ -31,14 +31,11 @@ const activitySchema = z.object({
 export async function GET(req: NextRequest) {
   try {
     const user = await requireAuth(req)
+    await connectDB()
 
-    const rows = await db
-      .select()
-      .from(schema.activities)
-      .where(eq(schema.activities.user_id, user.id))
-      .orderBy(asc(schema.activities.created_at))
+    const activities = await Activity.find({ user_id: user.id }).sort({ created_at: 1 })
 
-    return NextResponse.json(rows)
+    return NextResponse.json(activities)
   } catch (e) {
     if (e instanceof Response) return e
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -48,6 +45,8 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth(req)
+    await connectDB()
+
     const body = await req.json()
     const parsed = activitySchema.safeParse(body)
 
@@ -75,13 +74,10 @@ export async function POST(req: NextRequest) {
       tech_tags,
     })
 
-    // If slot_order is provided, check for uniqueness first
+    // If slot_order is provided, check for uniqueness first (the model's
+    // partial unique index backs this up as a defense-in-depth 409 below).
     if (data.slot_order !== null && data.slot_order !== undefined) {
-      const existing = await db
-        .select({ slot_order: schema.activities.slot_order })
-        .from(schema.activities)
-        .where(eq(schema.activities.user_id, user.id))
-      const slotTaken = existing.some((a) => a.slot_order === data.slot_order)
+      const slotTaken = await Activity.exists({ user_id: user.id, slot_order: data.slot_order })
       if (slotTaken) {
         return NextResponse.json(
           { error: `Slot ${data.slot_order} đã được sử dụng. Chọn slot khác.` },
@@ -90,9 +86,9 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const [inserted] = await db
-      .insert(schema.activities)
-      .values({
+    let inserted
+    try {
+      inserted = await Activity.create({
         user_id: user.id,
         category: data.category,
         title: data.title,
@@ -102,11 +98,20 @@ export async function POST(req: NextRequest) {
         star_result: data.star_result,
         trust_tier: 1,
         tech_tags,
-        base_score: base_score.toString(),
+        base_score,
         slot_order: data.slot_order ?? null,
         artifact_url: data.artifact_url ?? null,
       })
-      .returning()
+    } catch (err: unknown) {
+      const mongoErr = err as { code?: number }
+      if (mongoErr?.code === 11000) {
+        return NextResponse.json(
+          { error: `Slot ${data.slot_order} đã được sử dụng. Chọn slot khác.` },
+          { status: 409 }
+        )
+      }
+      throw err
+    }
 
     return NextResponse.json(inserted, { status: 201 })
   } catch (e) {

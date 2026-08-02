@@ -1,16 +1,30 @@
 /**
- * Supabase Auth helpers for API route authentication
+ * JWT-based auth helpers for API route authentication.
  */
-import { createClient } from '@supabase/supabase-js'
+import jwt from 'jsonwebtoken'
 import { NextRequest } from 'next/server'
 
-export function createSupabaseClient() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY
-  if (!url || !key) {
-    throw new Error('Supabase environment variables are not configured')
+interface TokenPayload {
+  sub: string
+  email: string
+}
+
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET
+  if (!secret) {
+    throw new Error('JWT_SECRET environment variable is not set')
   }
-  return createClient(url, key, { auth: { persistSession: false } })
+  return secret
+}
+
+/**
+ * Sign a JWT for a freshly registered/logged-in user.
+ */
+export function signToken(user: { id: string; email: string }): string {
+  const payload: TokenPayload = { sub: user.id, email: user.email }
+  return jwt.sign(payload, getJwtSecret(), {
+    expiresIn: (process.env.JWT_EXPIRES_IN ?? '7d') as jwt.SignOptions['expiresIn'],
+  })
 }
 
 export async function getAuthUser(
@@ -20,15 +34,13 @@ export async function getAuthUser(
   if (!authHeader?.startsWith('Bearer ')) return null
 
   const token = authHeader.slice(7)
-  const supabase = createSupabaseClient()
 
-  const {
-    data: { user },
-    error,
-  } = await supabase.auth.getUser(token)
-
-  if (error || !user) return null
-  return { id: user.id, email: user.email ?? '' }
+  try {
+    const payload = jwt.verify(token, getJwtSecret()) as TokenPayload
+    return { id: payload.sub, email: payload.email }
+  } catch {
+    return null
+  }
 }
 
 /**
@@ -47,7 +59,7 @@ export async function requireAuth(req: NextRequest) {
 }
 
 /**
- * Minimal admin check — reads ADMIN_USER_IDS env var (comma-separated UUIDs).
+ * Minimal admin check — reads ADMIN_USER_IDS env var (comma-separated Mongo ObjectId strings).
  */
 export function isAdmin(userId: string): boolean {
   const admins = (process.env.ADMIN_USER_IDS ?? '').split(',').map((s) => s.trim())

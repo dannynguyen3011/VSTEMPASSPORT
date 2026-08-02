@@ -4,7 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Leaf, Eye, EyeOff, ArrowRight, AlertCircle, ArrowLeft } from 'lucide-react'
-import { getSupabaseBrowser } from '@/shared/supabase-browser'
+import { signIn } from '@/shared/auth-client'
 import { ThemeToggle } from '@/components/shared/ThemeToggle'
 
 export default function LoginPage() {
@@ -20,8 +20,6 @@ export default function LoginPage() {
     setError(null)
     setLoading(true)
     try {
-      const supabase = getSupabaseBrowser()
-
       // Resolve login email: if no @ it's a username → look up the email first
       let loginEmail = identifier.trim()
       if (!loginEmail.includes('@')) {
@@ -36,17 +34,10 @@ export default function LoginPage() {
         loginEmail = data.email
       }
 
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email: loginEmail,
-        password,
-      })
+      const { error: authError } = await signIn(loginEmail, password)
 
       if (authError) {
-        setError(
-          authError.message === 'Invalid login credentials'
-            ? 'Email/tên đăng nhập hoặc mật khẩu không đúng. Vui lòng thử lại.'
-            : authError.message
-        )
+        setError(authError)
         return
       }
       router.push('/dashboard')

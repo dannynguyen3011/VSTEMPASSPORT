@@ -8,8 +8,8 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { eq } from 'drizzle-orm'
-import { db, schema } from '@/backend/db'
+import { connectDB } from '@/backend/db/mongoose'
+import { User, Activity as ActivityModel } from '@/backend/db/models'
 import { requireAuth } from '@/backend/auth'
 import { calculateOCS } from '@/shared/ocs'
 import type { Activity } from '@/types'
@@ -21,6 +21,8 @@ const requestSchema = z.object({
 export async function POST(req: NextRequest) {
   try {
     const user = await requireAuth(req)
+    await connectDB()
+
     const body = await req.json().catch(() => ({}))
     const parsed = requestSchema.safeParse(body)
 
@@ -29,35 +31,26 @@ export async function POST(req: NextRequest) {
     }
 
     // Load profile for target_major
-    const [profileRow] = await db
-      .select()
-      .from(schema.userProfiles)
-      .where(eq(schema.userProfiles.user_id, user.id))
-      .limit(1)
+    const profileDoc = await User.findById(user.id)
 
-    const targetMajor =
-      parsed.data.target_major ??
-      ((profileRow?.target_major ?? 'cntt') as 'cntt' | 'toan_thong_ke')
+    const targetMajor = parsed.data.target_major ?? profileDoc?.target_major ?? 'cntt'
 
     // Load activities from DB
-    const activityRows = await db
-      .select()
-      .from(schema.activities)
-      .where(eq(schema.activities.user_id, user.id))
+    const activityDocs = await ActivityModel.find({ user_id: user.id })
 
-    const activities: Activity[] = activityRows.map((a) => ({
-      activity_id: a.activity_id,
-      user_id: a.user_id,
-      category: a.category as Activity['category'],
+    const activities: Activity[] = activityDocs.map((a) => ({
+      activity_id: a._id.toString(),
+      user_id: a.user_id.toString(),
+      category: a.category,
       title: a.title,
       star_situation: a.star_situation,
       star_task: a.star_task,
       star_action: a.star_action,
       star_result: a.star_result,
-      trust_tier: a.trust_tier as 1 | 2 | 3,
+      trust_tier: a.trust_tier,
       trust_verified_by: a.trust_verified_by,
       tech_tags: a.tech_tags ?? [],
-      base_score: a.base_score ? parseFloat(a.base_score) : 1.0,
+      base_score: a.base_score ?? 1.0,
       slot_order: a.slot_order,
       artifact_url: a.artifact_url,
       created_at: a.created_at.toISOString(),

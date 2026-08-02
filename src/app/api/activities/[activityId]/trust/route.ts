@@ -10,8 +10,9 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { and, eq } from 'drizzle-orm'
-import { db, schema } from '@/backend/db'
+import mongoose from 'mongoose'
+import { connectDB } from '@/backend/db/mongoose'
+import { Activity, AuditLog } from '@/backend/db/models'
 import { requireAuth } from '@/backend/auth'
 import { notifyAdmin } from '@/backend/rocketchat'
 
@@ -34,6 +35,12 @@ export async function POST(req: NextRequest, { params }: Params) {
   try {
     const user = await requireAuth(req)
     const { activityId } = await params
+    await connectDB()
+
+    if (!mongoose.isValidObjectId(activityId)) {
+      return NextResponse.json({ error: 'Activity not found' }, { status: 404 })
+    }
+
     const body = await req.json()
     const parsed = trustRequestSchema.safeParse(body)
 
@@ -42,16 +49,7 @@ export async function POST(req: NextRequest, { params }: Params) {
     }
 
     // Verify the activity belongs to this user
-    const [activity] = await db
-      .select()
-      .from(schema.activities)
-      .where(
-        and(
-          eq(schema.activities.activity_id, activityId),
-          eq(schema.activities.user_id, user.id)
-        )
-      )
-      .limit(1)
+    const activity = await Activity.findOne({ _id: activityId, user_id: user.id })
 
     if (!activity) {
       return NextResponse.json({ error: 'Activity not found' }, { status: 404 })
@@ -67,7 +65,7 @@ export async function POST(req: NextRequest, { params }: Params) {
        * - In production: send Resend email to verifier with approval link
        * - Tier actually upgraded by admin via /api/admin/trust
        */
-      await db.insert(schema.auditLogs).values({
+      await AuditLog.create({
         entity_type: 'activity',
         entity_id: activityId,
         action: 'trust_tier2_requested',
@@ -79,10 +77,8 @@ export async function POST(req: NextRequest, { params }: Params) {
       })
 
       // Update verified_by field to show pending review
-      await db
-        .update(schema.activities)
-        .set({ trust_verified_by: `pending:${data.verifier_email}` })
-        .where(eq(schema.activities.activity_id, activityId))
+      activity.trust_verified_by = `pending:${data.verifier_email}`
+      await activity.save()
 
       await notifyAdmin({
         text: `📨 *TrustFactor Tier 2 request* — chờ giáo viên xác nhận`,
@@ -106,7 +102,7 @@ export async function POST(req: NextRequest, { params }: Params) {
       /**
        * Tier 3: Certificate upload → admin review within 24-48h
        */
-      await db.insert(schema.auditLogs).values({
+      await AuditLog.create({
         entity_type: 'activity',
         entity_id: activityId,
         action: 'trust_tier3_requested',
@@ -117,13 +113,9 @@ export async function POST(req: NextRequest, { params }: Params) {
         }),
       })
 
-      await db
-        .update(schema.activities)
-        .set({
-          trust_verified_by: `pending:${data.certificate_issuer}`,
-          artifact_url: data.certificate_url,
-        })
-        .where(eq(schema.activities.activity_id, activityId))
+      activity.trust_verified_by = `pending:${data.certificate_issuer}`
+      activity.artifact_url = data.certificate_url
+      await activity.save()
 
       await notifyAdmin({
         text: `🎓 *TrustFactor Tier 3* — chứng chỉ mới cần admin review (SLA 24-48h)`,

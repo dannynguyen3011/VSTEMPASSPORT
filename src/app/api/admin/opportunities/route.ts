@@ -8,12 +8,12 @@
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { eq } from 'drizzle-orm'
-import { db, schema } from '@/backend/db'
+import { connectDB } from '@/backend/db/mongoose'
+import { Opportunity, AuditLog } from '@/backend/db/models'
 import { requireAuth, isAdmin } from '@/backend/auth'
 
 const approveSchema = z.object({
-  opp_id: z.string().uuid(),
+  opp_id: z.string().regex(/^[0-9a-fA-F]{24}$/, 'Invalid opp_id'),
   approved: z.boolean(),
 })
 
@@ -25,6 +25,7 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
+    await connectDB()
     const body = await req.json()
     const parsed = approveSchema.safeParse(body)
 
@@ -34,17 +35,17 @@ export async function PUT(req: NextRequest) {
 
     const { opp_id, approved } = parsed.data
 
-    const [updated] = await db
-      .update(schema.opportunities)
-      .set({ admin_verified: approved })
-      .where(eq(schema.opportunities.opp_id, opp_id))
-      .returning()
+    const updated = await Opportunity.findByIdAndUpdate(
+      opp_id,
+      { admin_verified: approved },
+      { new: true }
+    )
 
     if (!updated) {
       return NextResponse.json({ error: 'Opportunity not found' }, { status: 404 })
     }
 
-    await db.insert(schema.auditLogs).values({
+    await AuditLog.create({
       entity_type: 'opportunity',
       entity_id: opp_id,
       action: approved ? 'opportunity_approved' : 'opportunity_rejected',
@@ -75,12 +76,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'Admin access required' }, { status: 403 })
     }
 
-    const rows = await db
-      .select()
-      .from(schema.opportunities)
-      .orderBy(schema.opportunities.created_at)
+    await connectDB()
+    const opportunities = await Opportunity.find().sort({ created_at: 1 })
 
-    return NextResponse.json(rows)
+    return NextResponse.json(opportunities)
   } catch (e) {
     if (e instanceof Response) return e
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

@@ -4,8 +4,8 @@
  * Used by the login page to support username-based login.
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { eq } from 'drizzle-orm'
-import { db, schema } from '@/backend/db'
+import { connectDB } from '@/backend/db/mongoose'
+import { User } from '@/backend/db/models'
 
 export async function GET(req: NextRequest) {
   const username = req.nextUrl.searchParams.get('username')?.toLowerCase().trim()
@@ -15,17 +15,14 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const rows = await db
-      .select({ email: schema.userProfiles.email })
-      .from(schema.userProfiles)
-      .where(eq(schema.userProfiles.username, username))
-      .limit(1)
+    await connectDB()
+    const user = await User.findOne({ username }).select('email')
 
-    if (!rows.length || !rows[0].email) {
+    if (!user?.email) {
       return NextResponse.json({ error: 'Username not found' }, { status: 404 })
     }
 
-    return NextResponse.json({ email: rows[0].email })
+    return NextResponse.json({ email: user.email })
   } catch (e) {
     console.error('[lookup-username]', e)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

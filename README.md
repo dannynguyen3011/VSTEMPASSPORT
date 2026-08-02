@@ -24,9 +24,9 @@ flowchart TB
         API --> LIB
     end
 
-    subgraph Supabase["🗄 Supabase"]
-        AUTH["Supabase Auth (JWT)"]
-        PG[("PostgreSQL<br/>users · activities<br/>opportunities · trust")]
+    subgraph Mongo["🗄 MongoDB Atlas"]
+        AUTH["Custom JWT Auth<br/>bcrypt password hashing"]
+        DB[("MongoDB<br/>users · activities<br/>opportunities · trust")]
     end
 
     subgraph AI["🤖 AI / RAG"]
@@ -39,8 +39,8 @@ flowchart TB
     INGEST["scripts/ingest-rag.ts<br/>(one-off corpus build)"]
 
     Client -->|HTTPS| Vercel
-    LIB -->|Drizzle ORM| PG
-    LIB -->|@supabase/supabase-js| AUTH
+    LIB -->|Mongoose ODM| DB
+    LIB -->|jsonwebtoken + bcryptjs| AUTH
     LIB -->|@anthropic-ai/sdk| CLAUDE
     LIB -->|chromadb client| CHROMA
     LIB -.->|RAG retrieval| LC
@@ -52,16 +52,21 @@ flowchart TB
 
 ### Request flow examples
 
+**Register / Login:**
+1. User submits the register or login form (`/register`, `/login`)
+2. `POST /api/auth/register` (hashes password with bcrypt, creates the user document, signs a JWT) or `POST /api/auth/login` (verifies password, signs a JWT)
+3. Client stores `{ token, user }` in `localStorage` and sends `Authorization: Bearer <token>` on every subsequent API call
+
 **Chatbot query (RAG):**
 1. User asks question in `/chatbot` (React)
-2. `POST /api/chat` with Supabase JWT
-3. Server: validate JWT → embed query (LangChain + OpenAI) → query Chroma for top-K passages → call Claude with passages + chat history → stream response back
+2. `POST /api/chat` with the JWT
+3. Server: verify JWT → embed query (LangChain + OpenAI) → query Chroma for top-K passages → call Claude with passages + chat history → stream response back
 4. Client renders the markdown reply with `react-markdown`
 
 **Save portfolio activity:**
 1. User submits form on `/portfolio` (react-hook-form + Zod)
 2. `POST /api/activities`
-3. Server: validate JWT → Zod schema check → Drizzle `INSERT` to Supabase Postgres
+3. Server: verify JWT → Zod schema check → Mongoose `create()` into MongoDB
 4. Client updates Zustand store (persisted to localStorage)
 
 ---
@@ -73,9 +78,9 @@ flowchart TB
 - **React 18** + **TypeScript**
 
 ### Database & Auth
-- **Supabase** — managed Postgres + Auth (JWT)
-- **Drizzle ORM** + **drizzle-kit** — type-safe SQL, migrations
-- **postgres** — Postgres driver
+- **MongoDB Atlas** — managed MongoDB, used for both local dev and production
+- **Mongoose** — schema/ODM layer over MongoDB
+- **jsonwebtoken** + **bcryptjs** — custom auth: password hashing + stateless JWT sessions (no third-party auth provider)
 
 ### AI / RAG
 - **Anthropic Claude** (`@anthropic-ai/sdk`) — chatbot + Compass analysis
@@ -107,7 +112,7 @@ flowchart TB
 ### Hosting
 - **Vercel** — hosts the Next.js app, auto-deploys from `main`
 - **Railway** — hosts ChromaDB Docker container
-- **Supabase** — managed Postgres + Auth platform
+- **MongoDB Atlas** — managed database, free M0 tier is enough to start
 
 ---
 
@@ -147,27 +152,27 @@ src/
 │
 ├── components/
 │   ├── shared/
-│   │   ├── Sidebar.tsx      # FRONTEND — navigation sidebar
 │   │   ├── Topbar.tsx       # FRONTEND — top bar with auth dropdown / demo switcher
 │   │   ├── AuthDataLoader.tsx # FRONTEND — loads real DB data into Zustand on login
 │   │   ├── ThemeToggle.tsx  # FRONTEND — dark/light mode toggle
 │   │   └── TrustBadge.tsx   # FRONTEND — trust tier badge component
 │   └── ui/                  # FRONTEND — @base-ui/react primitives
 │
-├── db/
-│   ├── schema.ts            # BACKEND — Drizzle ORM table definitions
-│   └── index.ts             # BACKEND — database client
+├── backend/
+│   ├── db/
+│   │   ├── mongoose.ts      # BACKEND — cached MongoDB connection singleton
+│   │   └── models/          # BACKEND — Mongoose schemas (User, Activity, Opportunity, ...)
+│   ├── auth.ts              # BACKEND — JWT sign/verify + requireAuth()/isAdmin() helpers
+│   ├── rag.ts                # AI RAG — document retrieval from Chroma
+│   ├── nlp-tagger.ts         # AI — auto-tags activities with tech keywords
+│   └── rocketchat.ts         # BACKEND — optional admin notification webhook
 │
-├── lib/
-│   ├── auth.ts              # BACKEND — Supabase Auth helpers for API routes
-│   ├── ocs.ts               # BACKEND/FRONTEND — Overall Competency Score logic
-│   ├── matching.ts          # BACKEND/FRONTEND — school matching & unrealistic goal detection
-│   ├── rag.ts               # AI RAG — document retrieval from Chroma
-│   ├── nlp-tagger.ts        # AI — auto-tags activities with tech keywords
-│   ├── constants.ts         # FRONTEND — Big 6 school data, category labels/colors
-│   ├── demoUsers.ts         # FRONTEND — seed data for demo mode
-│   ├── supabase-browser.ts  # FRONTEND — Supabase client for browser
-│   └── utils.ts             # Shared utilities
+├── shared/
+│   ├── auth-client.ts       # FRONTEND — JWT session helpers (localStorage-backed)
+│   ├── ocs.ts                # BACKEND/FRONTEND — Overall Competency Score logic
+│   ├── matching.ts           # BACKEND/FRONTEND — school matching & unrealistic goal detection
+│   ├── constants.ts          # FRONTEND — Big 6 school data, category labels/colors
+│   └── demoUsers.ts          # FRONTEND — seed data for demo mode
 │
 ├── store/
 │   └── useProfileStore.ts   # FRONTEND — Zustand store (profile + activities state)
@@ -185,19 +190,20 @@ All pages under `src/app/(app)/`, `src/app/(auth)/`, `src/app/demo/`, and `src/a
 Responsibilities:
 - Renders the UI with Tailwind CSS (dark/light mode via `next-themes`)
 - Manages client state via Zustand (`useProfileStore`)
-- Handles auth session via Supabase browser client
+- Handles auth session via `src/shared/auth-client.ts` (JWT stored in `localStorage`)
 - Demo mode: uses hardcoded seed data from `demoUsers.ts`, no login required
 
 ---
 
 ## Backend
 
-All routes under `src/app/api/` plus `src/db/` and `src/lib/auth.ts`.
+All routes under `src/app/api/` plus `src/backend/db/` and `src/backend/auth.ts`.
 
 Responsibilities:
-- REST API endpoints for profile, activities, opportunities, mentors
-- Authentication via Supabase JWT (Bearer token on every request)
-- Database access via Drizzle ORM → Supabase PostgreSQL
+- REST API endpoints for auth, profile, activities, opportunities, mentors
+- Authentication via a self-issued JWT (Bearer token on every request), verified in `src/backend/auth.ts`
+- Password hashing with bcrypt; no third-party auth provider
+- Database access via Mongoose → MongoDB Atlas
 - OCS score calculation and school match logic
 - Admin endpoints for trust verification and opportunity management
 
@@ -205,7 +211,7 @@ Responsibilities:
 
 ## AI / RAG
 
-Files: `src/lib/rag.ts`, `src/lib/nlp-tagger.ts`, `src/app/api/chat/route.ts`, `scripts/ingest-rag.ts`
+Files: `src/backend/rag.ts`, `src/backend/nlp-tagger.ts`, `src/app/api/chat/route.ts`, `scripts/ingest-rag.ts`
 
 - **`rag.ts`** — connects to Chroma, retrieves relevant chunks for a query (university admission docs, scholarship info)
 - **`nlp-tagger.ts`** — keyword-tags portfolio activities with tech/skill labels
@@ -223,14 +229,22 @@ To use the chatbot in production, ChromaDB must be deployed (Railway in this pro
 
 ## Getting Started
 
+1. **Create a MongoDB Atlas cluster** (free M0 tier is enough): [cloud.mongodb.com](https://cloud.mongodb.com) → Database → Connect → Drivers → copy the `mongodb+srv://...` connection string. Under Network Access, allow access from anywhere (`0.0.0.0/0`) — this is required for both local dev (dynamic IP) and Vercel (no static IPs on the default tier).
+2. **Fill in `.env.local`:**
+
 ```bash
 npm install
-cp .env.example .env.local   # fill in your keys
-npm run db:generate
-npm run db:migrate
+cp .env.example .env.local   # fill in MONGODB_URI, JWT_SECRET, ANTHROPIC_API_KEY, etc.
+```
+
+3. **Seed reference data (school personas + opportunities) and run:**
+
+```bash
 npm run db:seed
 npm run dev
 ```
+
+4. Open `http://localhost:3000/register` and create an account — no separate database migration step is needed (MongoDB is schemaless; Mongoose creates collections/indexes on first write).
 
 For the RAG chatbot, after setting `CHROMA_URL`:
 
@@ -247,11 +261,11 @@ The project ships with a multi-stage production `Dockerfile`, a `Dockerfile.dev`
 
 ### Local development (recommended)
 
-Brings up Next.js (hot reload) + ChromaDB with a persistent volume. The compose file overrides `CHROMA_URL` to point at the local `chromadb` service, so you don't need to change your `.env.local`.
+Brings up Next.js (hot reload) + ChromaDB with a persistent volume. The compose file overrides `CHROMA_URL` to point at the local `chromadb` service, so you don't need to change your `.env.local`. The app's own database is always MongoDB Atlas (cloud) — `MONGODB_URI` in `.env.local` is used as-is inside the container, Docker doesn't change that.
 
 ```bash
-cp .env.example .env.local   # fill in Supabase + Anthropic keys
-docker compose up            # build + start both services
+cp .env.example .env.local   # fill in MONGODB_URI, JWT_SECRET, Anthropic keys
+docker compose up app chromadb   # build + start just the app + Chroma
 # App: http://localhost:3000
 # Chroma: http://localhost:8000/api/v2/heartbeat
 
@@ -259,6 +273,8 @@ docker compose logs -f app   # tail app logs
 docker compose down          # stop (keeps chroma_data volume)
 docker compose down -v       # stop AND wipe Chroma data
 ```
+
+The compose file also defines `mongodb`, `mongodb-init`, and `rocketchat` services — those back an optional, unrelated admin-notification feature (Rocket.Chat), not the app's own database. Add them to the `up` command (or run `docker compose up` with no service list) only if you want that feature too; see `docs/rocketchat.md`.
 
 To ingest the RAG corpus into the local Chroma (after placing PDFs in `./corpus/`):
 
@@ -298,15 +314,14 @@ docker build --network=host -t greenstem .
 
 | Variable | Description |
 |----------|-------------|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key (server-only) |
-| `DATABASE_URL` | PostgreSQL connection string (Supabase pooler, port 6543) |
+| `MONGODB_URI` | MongoDB Atlas connection string (same cluster for local dev and production) |
+| `JWT_SECRET` | Long random secret used to sign/verify auth JWTs — keep it secret, never commit it |
+| `JWT_EXPIRES_IN` | JWT session lifetime, e.g. `7d` |
 | `ANTHROPIC_API_KEY` | Anthropic API key for Claude |
 | `CHROMA_URL` | ChromaDB URL (Railway public domain) |
 | `NEXT_PUBLIC_APP_URL` | Deployed app URL |
 | `RAG_DATA_FRESHNESS_DATE` | Date shown in chatbot "data current as of" disclaimer |
-| `ADMIN_USER_IDS` | Comma-separated Supabase user UUIDs with admin access |
+| `ADMIN_USER_IDS` | Comma-separated MongoDB `_id` strings (from the `users` collection) with admin access |
 | `RESEND_API_KEY` | Resend API key (optional — for teacher verification email) |
 | `RESEND_FROM_EMAIL` | Sender address for Resend |
 
@@ -314,11 +329,8 @@ docker build --network=host -t greenstem .
 
 ## Deployment
 
-Deployed on **Vercel** (Next.js app) and **Railway** (ChromaDB).
+Deployed on **Vercel** (Next.js app), **MongoDB Atlas** (database), and **Railway** (ChromaDB).
 
-- **Vercel** — every push to `main` triggers an automatic redeployment
+- **Vercel** — every push to `main` triggers an automatic redeployment. Set `MONGODB_URI`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `ANTHROPIC_API_KEY`, `CHROMA_URL`, `ADMIN_USER_IDS`, and the rest of the table above as Vercel project environment variables (Project Settings → Environment Variables).
+- **MongoDB Atlas** — under Network Access, allow access from anywhere (`0.0.0.0/0`); Vercel's serverless functions don't have static outbound IPs on the default tier, so per-IP allowlisting isn't practical here.
 - **Railway** — `chromadb/chroma` Docker image, port `8000`, persistent volume mounted at `/chroma/chroma`, env vars `IS_PERSISTENT=TRUE` and `ANONYMIZED_TELEMETRY=FALSE`
-
-After deploying, update your Supabase project:
-- **Authentication → URL Configuration → Site URL:** your Vercel URL
-- **Authentication → URL Configuration → Redirect URLs:** `https://your-app.vercel.app/**`

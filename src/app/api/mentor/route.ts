@@ -3,38 +3,30 @@
  * Query params: school, expertise_tag
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { and, eq, sql } from 'drizzle-orm'
-import { db, schema } from '@/backend/db'
+import { connectDB } from '@/backend/db/mongoose'
+import { Mentor } from '@/backend/db/models'
 import { requireAuth } from '@/backend/auth'
 
 export async function GET(req: NextRequest) {
   try {
     await requireAuth(req)
+    await connectDB()
 
     const { searchParams } = new URL(req.url)
-    const conditions = [
-      eq(schema.mentors.is_active, true),
-      eq(schema.mentors.verified, true),
-    ]
+    const filter: Record<string, unknown> = { is_active: true, verified: true }
 
     if (searchParams.get('school')) {
-      conditions.push(eq(schema.mentors.school, searchParams.get('school')!))
+      filter.school = searchParams.get('school')
     }
 
     const expertiseTag = searchParams.get('expertise_tag')
     if (expertiseTag) {
-      conditions.push(
-        sql`${schema.mentors.expertise_tags} @> ARRAY[${expertiseTag}]::text[]`
-      )
+      filter.expertise_tags = expertiseTag
     }
 
-    const rows = await db
-      .select()
-      .from(schema.mentors)
-      .where(and(...conditions))
-      .orderBy(schema.mentors.rating)
+    const mentors = await Mentor.find(filter).sort({ rating: 1 })
 
-    return NextResponse.json(rows)
+    return NextResponse.json(mentors)
   } catch (e) {
     if (e instanceof Response) return e
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
