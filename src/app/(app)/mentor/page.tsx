@@ -1,28 +1,43 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Topbar } from '@/components/shared/Topbar'
 import { DEMO_MENTORS } from '@/shared/constants'
 import { useProfileStore } from '@/store/useProfileStore'
+import { getSession } from '@/shared/auth-client'
+import type { MentorProfile } from '@/types'
 import { Star, ShieldCheck, MessageSquareShare, Search } from 'lucide-react'
 
 export default function MentorPage() {
   const { profile } = useProfileStore()
 
+  const [allMentors, setAllMentors] = useState<MentorProfile[]>(DEMO_MENTORS)
   const [query, setQuery] = useState('')
   const [schoolFilter, setSchoolFilter] = useState<'all' | string>('all')
   const [onlyVerified, setOnlyVerified] = useState(true)
   const [notice, setNotice] = useState('')
+  const [connecting, setConnecting] = useState<string | null>(null)
+  const [connectedIds, setConnectedIds] = useState<Set<string>>(new Set())
+
+  useEffect(() => {
+    const session = getSession()
+    if (!session) return // demo mode — keep showing DEMO_MENTORS
+
+    fetch('/api/mentor', { headers: { Authorization: `Bearer ${session.access_token}` } })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((rows: MentorProfile[]) => setAllMentors(rows))
+      .catch((err) => console.error('[mentor] fetch failed:', err))
+  }, [])
 
   const schools = useMemo(
-    () => Array.from(new Set(DEMO_MENTORS.map((mentor) => mentor.school))),
-    []
+    () => Array.from(new Set(allMentors.map((mentor) => mentor.school))),
+    [allMentors]
   )
 
   const mentors = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
 
-    return DEMO_MENTORS
+    return allMentors
       .filter((mentor) => (onlyVerified ? mentor.verified : true))
       .filter((mentor) => (schoolFilter === 'all' ? true : mentor.school === schoolFilter))
       .filter((mentor) => {
@@ -34,16 +49,50 @@ export default function MentorPage() {
         )
       })
       .sort((a, b) => b.rating - a.rating)
-  }, [query, schoolFilter, onlyVerified])
+  }, [allMentors, query, schoolFilter, onlyVerified])
 
-  const handleConnect = (mentorName: string) => {
-    setNotice(`Da gui yeu cau ket noi toi ${mentorName}. Mentor se phan hoi trong 24h.`)
-    setTimeout(() => setNotice(''), 3000)
+  const handleConnect = async (mentor: MentorProfile) => {
+    const session = getSession()
+    if (!session) {
+      // Demo mode — no account to attach the connection to
+      setNotice(`Đã gửi yêu cầu kết nối tới ${mentor.display_name}. Mentor sẽ phản hồi trong 24h.`)
+      setTimeout(() => setNotice(''), 3000)
+      return
+    }
+
+    setConnecting(mentor.mentor_id)
+    try {
+      const res = await fetch('/api/mentor/connect', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ mentor_id: mentor.mentor_id, consent: true }),
+      })
+      const data = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        setNotice(typeof data?.error === 'string' ? data.error : 'Không thể kết nối. Hãy thử lại.')
+        setTimeout(() => setNotice(''), 3000)
+        return
+      }
+
+      setConnectedIds((prev) => new Set(prev).add(mentor.mentor_id))
+      setNotice(data.message ?? `Đã kết nối với ${mentor.display_name}.`)
+      setTimeout(() => setNotice(''), 3000)
+    } catch (err) {
+      console.error('[mentor] connect failed:', err)
+      setNotice('Network error. Hãy thử lại.')
+      setTimeout(() => setNotice(''), 3000)
+    } finally {
+      setConnecting(null)
+    }
   }
 
   return (
     <div className="flex flex-col h-full overflow-auto">
-      <Topbar title="Mentor Connection" />
+      <Topbar title="Kết nối Mentor" />
 
       <main className="flex-1 p-4 sm:p-6 space-y-5">
         {notice && (
@@ -54,12 +103,12 @@ export default function MentorPage() {
 
         <section className="bg-card rounded-xl border border-border p-5 shadow-sm space-y-4">
           <div>
-            <h2 className="text-base font-semibold text-foreground">Ket noi mentor phu hop</h2>
+            <h2 className="text-base font-semibold text-foreground">Kết nối mentor phù hợp</h2>
             <p className="text-sm text-muted-foreground mt-1">
-              Ho so hien tai:
+              Hồ sơ hiện tại:
               {' '}
               <span className="font-medium text-foreground">
-                {profile.display_name} · Lop {profile.grade} · {profile.target_major === 'cntt' ? 'CNTT' : 'Toan & Thong ke'}
+                {profile.display_name} · Lớp {profile.grade} · {profile.target_major === 'cntt' ? 'CNTT' : 'Toán & Thống kê'}
               </span>
             </p>
           </div>
@@ -70,7 +119,7 @@ export default function MentorPage() {
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Tim theo ten, major, expertise..."
+                placeholder="Tìm theo tên, ngành, chuyên môn..."
                 className="w-full border border-border rounded-lg pl-9 pr-3 py-2 text-sm bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </label>
@@ -80,7 +129,7 @@ export default function MentorPage() {
               onChange={(event) => setSchoolFilter(event.target.value)}
               className="border border-border rounded-lg px-3 py-2 text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
             >
-              <option value="all">Tat ca truong</option>
+              <option value="all">Tất cả trường</option>
               {schools.map((school) => (
                 <option key={school} value={school}>
                   {school}
@@ -96,7 +145,7 @@ export default function MentorPage() {
               onChange={(event) => setOnlyVerified(event.target.checked)}
               className="h-4 w-4 accent-primary"
             />
-            Chi hien mentor da verified
+            Chỉ hiện mentor đã xác thực
           </label>
         </section>
 
@@ -138,21 +187,26 @@ export default function MentorPage() {
                   {mentor.verified ? (
                     <span className="inline-flex items-center gap-1 text-primary">
                       <ShieldCheck className="h-3.5 w-3.5" />
-                      Verified
+                      Đã xác thực
                     </span>
                   ) : (
-                    <span>Chua xac minh</span>
+                    <span>Chưa xác minh</span>
                   )}
                   <span>•</span>
-                  <span>{mentor.is_active ? 'Dang hoat dong' : 'Tam nghi'}</span>
+                  <span>{mentor.is_active ? 'Đang hoạt động' : 'Tạm nghỉ'}</span>
                 </div>
 
                 <button
-                  onClick={() => handleConnect(mentor.display_name)}
-                  className="inline-flex items-center gap-1.5 text-sm bg-primary hover:bg-primary/90 text-primary-foreground px-3 py-1.5 rounded-lg transition-colors"
+                  onClick={() => handleConnect(mentor)}
+                  disabled={connecting === mentor.mentor_id || connectedIds.has(mentor.mentor_id)}
+                  className="inline-flex items-center gap-1.5 text-sm bg-primary hover:bg-primary/90 disabled:bg-muted disabled:text-muted-foreground disabled:cursor-not-allowed text-primary-foreground px-3 py-1.5 rounded-lg transition-colors"
                 >
                   <MessageSquareShare className="h-4 w-4" />
-                  Ket noi
+                  {connectedIds.has(mentor.mentor_id)
+                    ? 'Đã kết nối'
+                    : connecting === mentor.mentor_id
+                    ? 'Đang gửi...'
+                    : 'Kết nối'}
                 </button>
               </div>
             </article>
@@ -162,7 +216,7 @@ export default function MentorPage() {
         {mentors.length === 0 && (
           <section className="rounded-xl border border-dashed border-border bg-card p-8 text-center">
             <p className="text-sm text-muted-foreground">
-              Khong tim thay mentor phu hop voi bo loc hien tai.
+              Không tìm thấy mentor phù hợp với bộ lọc hiện tại.
             </p>
           </section>
         )}

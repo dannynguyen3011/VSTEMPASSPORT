@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useProfileStore } from '@/store/useProfileStore'
 import { calculateOCS } from '@/shared/ocs'
-import { Bell, ChevronDown, Users, LogOut, Settings } from 'lucide-react'
+import { ChevronDown, Users, LogOut, Settings } from 'lucide-react'
 import { ThemeToggle } from '@/components/shared/ThemeToggle'
 import { getSession, signOut as authSignOut } from '@/shared/auth-client'
 
@@ -98,11 +98,6 @@ export function Topbar({ title, forceDemo = false }: TopbarProps) {
         </div>
 
         <ThemeToggle variant="ghost" />
-
-        <button type="button" className="relative text-muted-foreground hover:text-foreground transition-colors hidden sm:block">
-          <Bell className="w-5 h-5" />
-          <span className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-white text-[10px] rounded-full flex items-center justify-center">2</span>
-        </button>
 
         {/* Authenticated: profile dropdown */}
         {isAuth ? (

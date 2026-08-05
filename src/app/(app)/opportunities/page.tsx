@@ -1,9 +1,10 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Topbar } from '@/components/shared/Topbar'
 import { DEMO_OPPORTUNITIES } from '@/shared/constants'
 import { useProfileStore } from '@/store/useProfileStore'
+import { getSession } from '@/shared/auth-client'
 import type { Opportunity } from '@/types'
 import { ExternalLink } from 'lucide-react'
 
@@ -11,16 +12,16 @@ type TypeFilter = 'all' | Opportunity['type']
 type ScopeFilter = 'all' | Opportunity['scope']
 
 const TYPE_LABELS: Record<Opportunity['type'], string> = {
-  competition: 'Competition',
-  scholarship: 'Scholarship',
-  workshop: 'Workshop',
-  summer_program: 'Summer Program',
+  competition: 'Cuộc thi',
+  scholarship: 'Học bổng',
+  workshop: 'Hội thảo',
+  summer_program: 'Trại hè',
 }
 
 const SCOPE_LABELS: Record<Opportunity['scope'], string> = {
-  international: 'International',
-  national: 'National',
-  regional: 'Regional',
+  international: 'Quốc tế',
+  national: 'Quốc gia',
+  regional: 'Khu vực',
 }
 
 function daysUntil(deadline: string) {
@@ -31,15 +32,16 @@ function daysUntil(deadline: string) {
 }
 
 function deadlineTone(days: number) {
-  if (days < 0) return { text: 'Da het han', className: 'bg-muted text-muted-foreground' }
-  if (days <= 3) return { text: `Con ${days} ngay`, className: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400' }
-  if (days <= 10) return { text: `Con ${days} ngay`, className: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400' }
-  return { text: `Con ${days} ngay`, className: 'bg-primary/15 text-primary' }
+  if (days < 0) return { text: 'Đã hết hạn', className: 'bg-muted text-muted-foreground' }
+  if (days <= 3) return { text: `Còn ${days} ngày`, className: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400' }
+  if (days <= 10) return { text: `Còn ${days} ngày`, className: 'bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-400' }
+  return { text: `Còn ${days} ngày`, className: 'bg-primary/15 text-primary' }
 }
 
 export default function OpportunitiesPage() {
   const { profile } = useProfileStore()
 
+  const [opportunities, setOpportunities] = useState<Opportunity[]>(DEMO_OPPORTUNITIES)
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all')
   const [onlineOnly, setOnlineOnly] = useState(false)
@@ -47,8 +49,36 @@ export default function OpportunitiesPage() {
 
   const majorTag = profile.target_major
 
+  useEffect(() => {
+    const session = getSession()
+    if (!session) return // demo mode — keep showing DEMO_OPPORTUNITIES
+
+    fetch('/api/opportunities?upcoming_only=false', {
+      headers: { Authorization: `Bearer ${session.access_token}` },
+    })
+      .then((res) => (res.ok ? res.json() : []))
+      .then((rows: Record<string, unknown>[]) => {
+        setOpportunities(
+          rows.map((row) => ({
+            opp_id: row.opp_id as string,
+            name: row.name as string,
+            type: row.type as Opportunity['type'],
+            field_tags: row.field_tags as Opportunity['field_tags'],
+            scope: row.scope as Opportunity['scope'],
+            is_online: row.is_online as boolean,
+            is_free: row.is_free as boolean,
+            deadline: new Date(row.deadline as string).toISOString().slice(0, 10),
+            source_url: row.source_url as string,
+            admin_verified: row.admin_verified as boolean,
+            description: row.description as string | undefined,
+          }))
+        )
+      })
+      .catch((err) => console.error('[opportunities] fetch failed:', err))
+  }, [])
+
   const filtered = useMemo(() => {
-    return DEMO_OPPORTUNITIES
+    return opportunities
       .filter((opportunity) =>
         opportunity.field_tags.includes(majorTag) || opportunity.field_tags.includes('stem')
       )
@@ -57,33 +87,33 @@ export default function OpportunitiesPage() {
       .filter((opportunity) => (onlineOnly ? opportunity.is_online : true))
       .filter((opportunity) => (freeOnly ? opportunity.is_free : true))
       .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
-  }, [majorTag, typeFilter, scopeFilter, onlineOnly, freeOnly])
+  }, [opportunities, majorTag, typeFilter, scopeFilter, onlineOnly, freeOnly])
 
   return (
     <div className="flex flex-col h-full overflow-auto">
-      <Topbar title="Kho Co Hoi STEM" />
+      <Topbar title="Kho Cơ Hội STEM" />
 
       <main className="flex-1 p-4 sm:p-6 space-y-5">
         <section className="bg-card rounded-xl border border-border p-5 shadow-sm space-y-4">
           <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
             <div>
-              <h2 className="text-base font-semibold text-foreground">Danh sach co hoi theo nganh muc tieu</h2>
+              <h2 className="text-base font-semibold text-foreground">Danh sách cơ hội theo ngành mục tiêu</h2>
               <p className="text-sm text-muted-foreground mt-1">
-                Dang uu tien co hoi phu hop voi nganh:
+                Đang ưu tiên cơ hội phù hợp với ngành:
                 {' '}
                 <span className="font-semibold text-foreground">
-                  {majorTag === 'cntt' ? 'CNTT' : 'Toan & Thong ke'}
+                  {majorTag === 'cntt' ? 'CNTT' : 'Toán & Thống kê'}
                 </span>
               </p>
             </div>
             <div className="rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 text-sm text-primary">
-              {filtered.length} co hoi phu hop
+              {filtered.length} cơ hội phù hợp
             </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Loai co hoi</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Loại cơ hội</p>
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => setTypeFilter('all')}
@@ -93,7 +123,7 @@ export default function OpportunitiesPage() {
                       : 'bg-muted text-muted-foreground hover:bg-muted/70'
                   }`}
                 >
-                  Tat ca
+                  Tất cả
                 </button>
                 {(Object.keys(TYPE_LABELS) as Opportunity['type'][]).map((type) => (
                   <button
@@ -112,7 +142,7 @@ export default function OpportunitiesPage() {
             </div>
 
             <div className="space-y-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pham vi</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Phạm vi</p>
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => setScopeFilter('all')}
@@ -122,7 +152,7 @@ export default function OpportunitiesPage() {
                       : 'bg-muted text-muted-foreground hover:bg-muted/70'
                   }`}
                 >
-                  Tat ca
+                  Tất cả
                 </button>
                 {(Object.keys(SCOPE_LABELS) as Opportunity['scope'][]).map((scope) => (
                   <button
@@ -149,7 +179,7 @@ export default function OpportunitiesPage() {
                 onChange={(event) => setOnlineOnly(event.target.checked)}
                 className="h-4 w-4 accent-primary"
               />
-              <span className="text-foreground">Chi online</span>
+              <span className="text-foreground">Chỉ online</span>
             </label>
             <label className="inline-flex items-center gap-2 cursor-pointer">
               <input
@@ -158,7 +188,7 @@ export default function OpportunitiesPage() {
                 onChange={(event) => setFreeOnly(event.target.checked)}
                 className="h-4 w-4 accent-primary"
               />
-              <span className="text-foreground">Chi mien phi</span>
+              <span className="text-foreground">Chỉ miễn phí</span>
             </label>
           </div>
         </section>
@@ -193,24 +223,24 @@ export default function OpportunitiesPage() {
                     {opportunity.is_online ? 'Online' : 'Offline'}
                   </span>
                   <span className="px-2 py-0.5 rounded-full text-xs bg-muted text-muted-foreground">
-                    {opportunity.is_free ? 'Mien phi' : 'Co phi'}
+                    {opportunity.is_free ? 'Miễn phí' : 'Có phí'}
                   </span>
                   {opportunity.admin_verified && (
                     <span className="px-2 py-0.5 rounded-full text-xs bg-primary/15 text-primary">
-                      Admin verified
+                      Đã xác thực
                     </span>
                   )}
                 </div>
 
                 <div className="flex items-center justify-between text-xs text-muted-foreground">
-                  <span>Deadline: {opportunity.deadline}</span>
+                  <span>Hạn chót: {opportunity.deadline}</span>
                   <a
                     href={opportunity.source_url}
                     target="_blank"
                     rel="noreferrer"
                     className="inline-flex items-center gap-1 text-blue-700 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium"
                   >
-                    Nguon chinh thuc
+                    Nguồn chính thức
                     <ExternalLink className="h-3.5 w-3.5" />
                   </a>
                 </div>
@@ -222,7 +252,7 @@ export default function OpportunitiesPage() {
         {filtered.length === 0 && (
           <section className="bg-card rounded-xl border border-dashed border-border p-8 text-center">
             <p className="text-sm text-muted-foreground">
-              Khong tim thay co hoi phu hop voi bo loc hien tai. Thu mo rong bo loc de xem them.
+              Không tìm thấy cơ hội phù hợp với bộ lọc hiện tại. Thử mở rộng bộ lọc để xem thêm.
             </p>
           </section>
         )}

@@ -7,8 +7,8 @@
 import { config } from 'dotenv'
 config({ path: '.env.local' })
 import mongoose from 'mongoose'
-import { SchoolPersona, Opportunity } from '../src/backend/db/models'
-import { BIG6_SCHOOLS, DEMO_OPPORTUNITIES } from '../src/shared/constants'
+import { SchoolPersona, Opportunity, Mentor } from '../src/backend/db/models'
+import { BIG6_SCHOOLS, DEMO_OPPORTUNITIES, DEMO_MENTORS } from '../src/shared/constants'
 
 async function main() {
   const uri = process.env.MONGODB_URI
@@ -66,6 +66,28 @@ async function main() {
     )
   }
   console.log(`  ✓ ${DEMO_OPPORTUNITIES.length} opportunities seeded`)
+
+  // ── Demo Mentors ───────────────────────────────────────────────────────────
+  console.log('  → Inserting demo mentors...')
+  for (const mentor of DEMO_MENTORS) {
+    await Mentor.updateOne(
+      { display_name: mentor.display_name, school: mentor.school },
+      {
+        $setOnInsert: {
+          display_name: mentor.display_name,
+          school: mentor.school,
+          major: mentor.major,
+          expertise_tags: mentor.expertise_tags,
+          bio: mentor.bio,
+          is_active: mentor.is_active,
+          verified: mentor.verified,
+          rating: mentor.rating,
+        },
+      },
+      { upsert: true }
+    )
+  }
+  console.log(`  ✓ ${DEMO_MENTORS.length} mentors seeded`)
 
   console.log('✅ Database seeded successfully!')
   await mongoose.disconnect()

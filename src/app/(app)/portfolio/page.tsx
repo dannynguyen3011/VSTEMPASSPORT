@@ -184,6 +184,32 @@ export default function PortfolioPage() {
     }
   }
 
+  const handleDelete = async (activityId: string) => {
+    const session = getSession()
+    if (!session) {
+      // Demo mode — no server record to delete, just update local state
+      removeActivity(activityId)
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/activities/${activityId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      })
+      if (!res.ok) {
+        setSuccessMsg('Không thể xoá hoạt động. Hãy thử lại.')
+        setTimeout(() => setSuccessMsg(''), 3000)
+        return
+      }
+      removeActivity(activityId)
+    } catch (err) {
+      console.error('[portfolio] delete activity failed:', err)
+      setSuccessMsg('Network error. Hãy thử lại.')
+      setTimeout(() => setSuccessMsg(''), 3000)
+    }
+  }
+
   const slotMap = new Map(slottedActivities.map((a) => [a.slot_order!, a]))
 
   return (
@@ -399,7 +425,7 @@ export default function PortfolioPage() {
                     </h3>
                   </div>
                   <button
-                    onClick={() => removeActivity(activity.activity_id)}
+                    onClick={() => handleDelete(activity.activity_id)}
                     className="text-muted-foreground hover:text-destructive transition-colors shrink-0"
                   >
                     <Trash2 className="w-4 h-4" />
@@ -457,7 +483,7 @@ export default function PortfolioPage() {
                   <div className="flex items-start justify-between">
                     <h3 className="text-sm font-medium text-foreground">{activity.title}</h3>
                     <button
-                      onClick={() => removeActivity(activity.activity_id)}
+                      onClick={() => handleDelete(activity.activity_id)}
                       className="text-muted-foreground hover:text-destructive transition-colors"
                     >
                       <Trash2 className="w-4 h-4" />
