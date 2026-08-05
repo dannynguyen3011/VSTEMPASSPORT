@@ -109,10 +109,6 @@ export default function LandingPage() {
           <div className="absolute top-24 left-1/2 -translate-x-1/2 w-[220px] h-[120px] bg-green-300/40 dark:bg-green-300/25 rounded-full blur-xl" />
         </div>
         <div className="relative max-w-4xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 bg-green-500/10 border border-green-500/20 rounded-full px-4 py-1.5 text-sm text-green-600 dark:text-green-400 mb-6">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-            Phiên bản v3.0 · Sẵn sàng cho Mentor Meeting 08/04
-          </div>
           <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold leading-tight tracking-tight mb-6">
             La Bàn Định Vị{' '}
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-green-500 to-green-700">

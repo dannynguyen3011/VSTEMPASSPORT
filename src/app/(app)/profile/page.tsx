@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Topbar } from '@/components/shared/Topbar'
 import { useProfileStore } from '@/store/useProfileStore'
 import { getSession } from '@/shared/auth-client'
+import { Button } from '@/components/ui/button'
 import { CheckCircle, AlertCircle, Save, Lock } from 'lucide-react'
 
 const PROVINCES = [
@@ -117,9 +118,9 @@ export default function ProfilePage() {
     }
   }
 
-  const inputCls = 'w-full h-10 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-white/10 rounded-xl px-4 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-600 text-sm focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500/30 transition-colors'
+  const inputCls = 'w-full h-11 bg-muted/60 border border-border rounded-lg px-4 text-foreground placeholder:text-muted-foreground text-sm focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-colors'
   const selectCls = `${inputCls} cursor-pointer`
-  const labelCls = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1.5'
+  const labelCls = 'block text-sm font-medium text-foreground mb-1.5'
 
   return (
     <div className="flex flex-col h-full overflow-auto">
@@ -150,15 +151,15 @@ export default function ProfilePage() {
             </div>
           )}
           {success && (
-            <div className="flex items-center gap-3 bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 rounded-xl px-4 py-3">
-              <CheckCircle className="w-4 h-4 text-green-500 shrink-0" />
-              <p className="text-sm text-green-700 dark:text-green-300">Đã lưu thành công!</p>
+            <div className="flex items-center gap-3 bg-primary/10 border border-primary/20 rounded-xl px-4 py-3">
+              <CheckCircle className="w-4 h-4 text-primary shrink-0" />
+              <p className="text-sm text-primary">Đã lưu thành công!</p>
             </div>
           )}
 
           {/* Section: Thông tin cơ bản */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4">
-            <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Thông tin cơ bản</h2>
+          <div className="bg-card rounded-xl border border-border p-6 space-y-4">
+            <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Thông tin cơ bản</h2>
 
             <div>
               <label className={labelCls}>Tên hiển thị</label>
@@ -198,10 +199,10 @@ export default function ProfilePage() {
           </div>
 
           {/* Section: Điểm số */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 space-y-4">
+          <div className="bg-card rounded-xl border border-border p-6 space-y-4">
             <div>
-              <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Điểm số</h2>
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">Dùng để tính Traffic Light và OCS. Để trống nếu chưa có.</p>
+              <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">Điểm số</h2>
+              <p className="text-xs text-muted-foreground mt-1">Dùng để tính Traffic Light và OCS. Để trống nếu chưa có.</p>
             </div>
 
             <div className="grid grid-cols-3 gap-4">
@@ -223,16 +224,16 @@ export default function ProfilePage() {
             </div>
           </div>
 
-          <button
+          <Button
             type="submit"
             disabled={saving || (!isAuth && authChecked)}
-            className="flex items-center gap-2 bg-green-600 hover:bg-green-500 disabled:bg-gray-200 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white disabled:text-gray-400 font-semibold px-6 py-2.5 rounded-xl text-sm transition-colors"
+            className="h-11 px-6 rounded-lg text-sm font-semibold"
           >
             {saving
-              ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ? <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
               : <Save className="w-4 h-4" />}
             {isAuth ? 'Lưu thay đổi' : 'Đăng nhập để lưu'}
-          </button>
+          </Button>
         </form>
       </main>
     </div>

@@ -116,13 +116,13 @@ export default function CompassPage() {
 
       <main className="flex-1 p-4 sm:p-6 space-y-6">
         {/* Read-only summary — edit via Cài đặt hồ sơ */}
-        <section className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 shadow-sm">
+        <section className="bg-card rounded-xl border border-border p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <h2 className="text-base font-semibold text-gray-800 dark:text-white">Hồ sơ hiện tại</h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+              <h2 className="text-base font-semibold text-foreground">Hồ sơ hiện tại</h2>
+              <p className="text-sm text-muted-foreground mt-0.5">
                 Hệ thống so sánh với ngưỡng Big 6. Cập nhật điểm số tại{' '}
-                <a href="/profile" className="text-green-600 dark:text-green-400 underline">Cài đặt hồ sơ</a>.
+                <a href="/profile" className="text-primary underline">Cài đặt hồ sơ</a>.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -130,11 +130,11 @@ export default function CompassPage() {
                 { label: 'GPA', value: gpaInput > 0 ? gpaInput.toFixed(1) : '—' },
                 { label: 'SAT', value: satInput > 0 ? satInput : '—' },
                 { label: 'IELTS', value: ieltsInput > 0 ? ieltsInput.toFixed(1) : '—' },
-                { label: 'OCS', value: total_ocs, green: true },
-              ].map(({ label, value, green }) => (
-                <div key={label} className={`rounded-lg border px-4 py-2 text-center min-w-[70px] ${green ? 'border-green-200 dark:border-green-500/30 bg-green-50 dark:bg-green-500/10' : 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700'}`}>
-                  <p className={`text-xs font-medium ${green ? 'text-green-700 dark:text-green-400' : 'text-gray-500 dark:text-gray-400'}`}>{label}</p>
-                  <p className={`text-xl font-bold ${green ? 'text-green-800 dark:text-green-300' : 'text-gray-800 dark:text-white'}`}>{value}</p>
+                { label: 'OCS', value: total_ocs, highlight: true },
+              ].map(({ label, value, highlight }) => (
+                <div key={label} className={`rounded-lg border px-4 py-2 text-center min-w-[70px] ${highlight ? 'border-primary/20 bg-primary/10' : 'border-border bg-muted/50'}`}>
+                  <p className={`text-sm font-medium ${highlight ? 'text-primary' : 'text-muted-foreground'}`}>{label}</p>
+                  <p className={`text-xl font-bold ${highlight ? 'text-primary' : 'text-foreground'}`}>{value}</p>
                 </div>
               ))}
             </div>
@@ -159,9 +159,9 @@ export default function CompassPage() {
             const tone =
               result.light === 'safe'
                 ? {
-                    dot: 'bg-green-500',
-                    text: 'text-green-700 dark:text-green-400',
-                    badge: 'bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300',
+                    dot: 'bg-primary',
+                    text: 'text-primary',
+                    badge: 'bg-primary/15 text-primary',
                     label: 'An toàn',
                     guidance: 'Hồ sơ vượt ngưỡng an toàn. Tự tin nộp.',
                   }
@@ -184,43 +184,43 @@ export default function CompassPage() {
             return (
               <article
                 key={school.school_id}
-                className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 shadow-sm space-y-3"
+                className="bg-card rounded-xl border border-border p-5 shadow-sm space-y-3"
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className={`h-3 w-3 rounded-full ${tone.dot}`} />
-                    <h3 className="font-semibold text-gray-800 dark:text-white">{school.school_name}</h3>
+                    <h3 className="font-semibold text-foreground">{school.school_name}</h3>
                   </div>
-                  <span className={`px-2.5 py-1 rounded-full text-xs font-semibold ${tone.badge}`}>
+                  <span className={`px-2.5 py-1 rounded-full text-sm font-semibold ${tone.badge}`}>
                     {tone.label}
                   </span>
                 </div>
 
                 <div className="flex items-end justify-between">
-                  <p className="text-sm text-gray-500 dark:text-gray-400">Mức độ phù hợp</p>
+                  <p className="text-sm text-muted-foreground">Mức độ phù hợp</p>
                   <p className={`text-3xl font-bold ${tone.text}`}>{result.matchPercentage}%</p>
                 </div>
 
-                <p className="text-sm text-gray-600 dark:text-gray-300">{tone.guidance}</p>
+                <p className="text-sm text-foreground/80">{tone.guidance}</p>
 
-                <div className="text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700/50 rounded-md p-2">
+                <div className="text-sm text-muted-foreground bg-muted/50 rounded-md p-2">
                   Ưu tiên danh mục:{' '}
                   {school.preferred_categories.map((cat) => CATEGORY_LABELS[cat]).join(', ')}
                 </div>
 
                 {result.gaps.length > 0 ? (
                   <div className="space-y-2">
-                    <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase">Gap Analysis</p>
+                    <p className="text-xs font-semibold text-muted-foreground uppercase">Gap Analysis</p>
                     {result.gaps.map((gap) => (
-                      <div key={`${school.school_id}-${gap.field}`} className="rounded-md border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/40 p-2.5">
-                        <p className="text-sm text-gray-700 dark:text-gray-200">{gap.message}</p>
-                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">{gap.action}</p>
+                      <div key={`${school.school_id}-${gap.field}`} className="rounded-md border border-border bg-muted/50 p-2.5">
+                        <p className="text-sm text-foreground/90">{gap.message}</p>
+                        <p className="text-sm text-blue-600 dark:text-blue-400 mt-1">{gap.action}</p>
                       </div>
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-md border border-green-200 dark:border-green-500/30 bg-green-50 dark:bg-green-500/10 p-2.5">
-                    <p className="text-sm text-green-700 dark:text-green-300">
+                  <div className="rounded-md border border-primary/20 bg-primary/10 p-2.5">
+                    <p className="text-sm text-primary">
                       Bạn đang đạt các ngưỡng chính của trường này.
                     </p>
                   </div>

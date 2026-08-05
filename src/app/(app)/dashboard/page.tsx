@@ -80,16 +80,16 @@ export default function DashboardPage() {
               <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
               <div>
                 <p className="text-sm font-medium text-amber-700 dark:text-amber-400">Hồ sơ chưa đầy đủ</p>
-                <p className="text-xs text-amber-600 dark:text-amber-500 mt-0.5">
+                <p className="text-sm text-amber-600 dark:text-amber-500 mt-0.5">
                   Điền GPA, SAT, IELTS để Traffic Light và OCS hoạt động chính xác.
                 </p>
               </div>
             </div>
             <Link
               href="/profile"
-              className="shrink-0 inline-flex items-center gap-1.5 text-xs font-semibold bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-lg transition-colors"
+              className="shrink-0 inline-flex items-center gap-1.5 text-sm font-semibold bg-amber-600 hover:bg-amber-500 text-white px-3 py-1.5 rounded-lg transition-colors"
             >
-              Cập nhật <ArrowRight className="w-3 h-3" />
+              Cập nhật <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           </div>
         )}
@@ -98,12 +98,12 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {[
             { label: 'Hoạt động đã nhập', value: totalCount, color: 'text-blue-600 dark:text-blue-400' },
-            { label: 'Slot đã dùng', value: `${slottedCount}/10`, color: 'text-green-600 dark:text-green-400' },
-            { label: 'OCS Score', value: total_ocs, color: 'text-green-700 dark:text-green-400' },
+            { label: 'Slot đã dùng', value: `${slottedCount}/10`, color: 'text-primary' },
+            { label: 'OCS Score', value: total_ocs, color: 'text-primary' },
             { label: 'Trường mục tiêu', value: profile.target_schools.length, color: 'text-purple-600 dark:text-purple-400' },
           ].map(({ label, value, color }) => (
-            <div key={label} className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 shadow-sm">
-              <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">{label}</p>
+            <div key={label} className="bg-card rounded-xl border border-border p-5 shadow-sm">
+              <p className="text-sm text-muted-foreground mb-1">{label}</p>
               <p className={`text-3xl font-bold ${color}`}>{value}</p>
             </div>
           ))}
@@ -111,39 +111,39 @@ export default function DashboardPage() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* OCS Gauge */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm flex flex-col items-center justify-center">
-            <h2 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-4">OCS Score</h2>
+          <div className="bg-card rounded-xl border border-border p-6 shadow-sm flex flex-col items-center justify-center">
+            <h2 className="text-sm font-semibold text-muted-foreground mb-4">OCS Score</h2>
             <div className="relative w-36 h-36">
               <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90">
-                <circle cx="50" cy="50" r="40" fill="none" stroke="#374151" strokeWidth="10" className="dark:stroke-gray-700 stroke-gray-200" />
+                <circle cx="50" cy="50" r="40" fill="none" stroke="currentColor" strokeWidth="10" className="text-muted" />
                 <circle
                   cx="50" cy="50" r="40" fill="none"
-                  stroke="#16a34a" strokeWidth="10" strokeLinecap="round"
+                  stroke="var(--primary)" strokeWidth="10" strokeLinecap="round"
                   strokeDasharray={circumference}
                   strokeDashoffset={dashOffset}
                   className="transition-all duration-700"
                 />
               </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-3xl font-bold text-green-700 dark:text-green-400">{total_ocs}</span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">/100</span>
+                <span className="text-3xl font-bold text-primary">{total_ocs}</span>
+                <span className="text-sm text-muted-foreground">/100</span>
               </div>
             </div>
-            <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">Overall Competency Score</p>
+            <p className="mt-3 text-sm text-muted-foreground">Overall Competency Score</p>
             {noActivities && (
-              <Link href="/portfolio" className="mt-3 text-xs text-green-600 dark:text-green-400 hover:underline">
+              <Link href="/portfolio" className="mt-3 text-sm text-primary hover:underline">
                 + Thêm hoạt động để tăng OCS
               </Link>
             )}
           </div>
 
           {/* T-Shape Radar */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
-            <h2 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-2">T-Shape Radar</h2>
+          <div className="bg-card rounded-xl border border-border p-6 shadow-sm">
+            <h2 className="text-sm font-semibold text-muted-foreground mb-2">T-Shape Radar</h2>
             <ResponsiveContainer width="100%" height={220}>
               <RadarChart data={radarData}>
                 <PolarGrid stroke="#374151" />
-                <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10, fill: '#9ca3af' }} />
+                <PolarAngleAxis dataKey="subject" tick={{ fontSize: 11, fill: '#9ca3af' }} />
                 <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
                 <Radar dataKey="score" stroke="#16a34a" fill="#16a34a" fillOpacity={0.25} />
               </RadarChart>
@@ -151,10 +151,10 @@ export default function DashboardPage() {
           </div>
 
           {/* Quick Profile Summary */}
-          <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm space-y-3">
+          <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-gray-600 dark:text-gray-300">Hồ sơ cá nhân</h2>
-              <Link href="/profile" className="text-xs text-green-600 dark:text-green-400 hover:underline">Chỉnh sửa</Link>
+              <h2 className="text-sm font-semibold text-muted-foreground">Hồ sơ cá nhân</h2>
+              <Link href="/profile" className="text-sm text-primary hover:underline">Chỉnh sửa</Link>
             </div>
             {[
               { label: 'GPA', value: profile.gpa === null ? '—' : profile.gpa.toFixed(1), missing: profile.gpa === null },
@@ -164,8 +164,8 @@ export default function DashboardPage() {
               { label: 'Ngành', value: profile.target_major === 'cntt' ? 'CNTT' : 'Toán & Thống kê', missing: false },
             ].map(({ label, value, missing }) => (
               <div key={label} className="flex justify-between items-center text-sm">
-                <span className="text-gray-500 dark:text-gray-400">{label}</span>
-                <span className={`font-semibold ${missing ? 'text-amber-500 dark:text-amber-400' : 'text-gray-800 dark:text-gray-100'}`}>
+                <span className="text-muted-foreground">{label}</span>
+                <span className={`font-semibold ${missing ? 'text-amber-500 dark:text-amber-400' : 'text-foreground'}`}>
                   {value}
                 </span>
               </div>
@@ -174,10 +174,10 @@ export default function DashboardPage() {
         </div>
 
         {/* Traffic Light Grid */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
-          <h2 className="text-base font-semibold text-gray-700 dark:text-gray-200 mb-4">Traffic Light — Mức độ phù hợp</h2>
+        <div className="bg-card rounded-xl border border-border p-6 shadow-sm">
+          <h2 className="text-base font-semibold text-foreground mb-4">Traffic Light — Mức độ phù hợp</h2>
           {profileIncomplete && (
-            <p className="text-xs text-amber-600 dark:text-amber-400 mb-4">
+            <p className="text-sm text-amber-600 dark:text-amber-400 mb-4">
               ⚠ Kết quả dựa trên điểm số hiện tại. Cập nhật GPA/SAT/IELTS để có kết quả chính xác hơn.
             </p>
           )}
@@ -188,7 +188,7 @@ export default function DashboardPage() {
                 light === 'green' ? 'bg-green-500' : light === 'yellow' ? 'bg-yellow-400' : 'bg-red-500'
               const textColor =
                 light === 'green'
-                  ? 'text-green-700 dark:text-green-400'
+                  ? 'text-primary'
                   : light === 'yellow'
                   ? 'text-yellow-700 dark:text-yellow-400'
                   : 'text-red-600 dark:text-red-400'
@@ -196,13 +196,13 @@ export default function DashboardPage() {
               return (
                 <div
                   key={school.school_id}
-                  className="flex items-center justify-between border border-gray-100 dark:border-gray-700 rounded-lg p-4 bg-gray-50 dark:bg-gray-700/40"
+                  className="flex items-center justify-between border border-border rounded-lg p-4 bg-muted/50"
                 >
                   <div className="flex items-center gap-3">
                     <div className={`w-3 h-3 rounded-full ${dotColor} shrink-0`} />
                     <div>
-                      <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">{school.short_name}</p>
-                      <p className={`text-xs font-medium ${textColor}`}>{label}</p>
+                      <p className="text-sm font-semibold text-foreground">{school.short_name}</p>
+                      <p className={`text-sm font-medium ${textColor}`}>{label}</p>
                     </div>
                   </div>
                   <span className={`text-lg font-bold ${textColor}`}>{pct}%</span>
@@ -213,14 +213,14 @@ export default function DashboardPage() {
         </div>
 
         {/* OCS Breakdown Table */}
-        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 shadow-sm">
-          <h2 className="text-base font-semibold text-gray-700 dark:text-gray-200 mb-4">OCS Breakdown — Top 5 Hoạt động</h2>
+        <div className="bg-card rounded-xl border border-border p-6 shadow-sm">
+          <h2 className="text-base font-semibold text-foreground mb-4">OCS Breakdown — Top 5 Hoạt động</h2>
           {noActivities ? (
             <div className="flex flex-col items-center justify-center py-10 gap-3 text-center">
-              <p className="text-sm text-gray-500 dark:text-gray-400">Bạn chưa có hoạt động nào trong portfolio.</p>
+              <p className="text-sm text-muted-foreground">Bạn chưa có hoạt động nào trong portfolio.</p>
               <Link
                 href="/portfolio"
-                className="inline-flex items-center gap-1.5 text-sm font-medium text-green-600 dark:text-green-400 hover:underline"
+                className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline"
               >
                 Thêm hoạt động đầu tiên <ArrowRight className="w-3.5 h-3.5" />
               </Link>
@@ -229,21 +229,21 @@ export default function DashboardPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-gray-100 dark:border-gray-700 text-left">
+                  <tr className="border-b border-border text-left">
                     {['Hoạt động', 'Danh mục', 'Base Score', 'Trust Weight', 'Relevance', 'Final Score'].map((h) => (
-                      <th key={h} className="pb-3 pr-4 font-semibold text-gray-500 dark:text-gray-400 text-xs uppercase tracking-wide">
+                      <th key={h} className="pb-3 pr-4 font-semibold text-muted-foreground text-xs uppercase tracking-wide">
                         {h}
                       </th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-50 dark:divide-gray-700">
+                <tbody className="divide-y divide-border">
                   {top5.map((item) => {
                     const activity = activities.find((a) => a.activity_id === item.activity_id)
                     const cat = activity?.category ?? 'competition'
                     return (
                       <tr key={item.activity_id}>
-                        <td className="py-3 pr-4 font-medium text-gray-800 dark:text-gray-100 max-w-xs truncate">
+                        <td className="py-3 pr-4 font-medium text-foreground max-w-xs truncate">
                           {item.title}
                         </td>
                         <td className="py-3 pr-4">
@@ -251,10 +251,10 @@ export default function DashboardPage() {
                             {CATEGORY_LABELS[cat as ActivityCategory]}
                           </span>
                         </td>
-                        <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">{item.base_score}</td>
-                        <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">×{item.trust_weight}</td>
-                        <td className="py-3 pr-4 text-gray-700 dark:text-gray-300">×{item.relevance_multiplier}</td>
-                        <td className="py-3 pr-4 font-bold text-green-700 dark:text-green-400">
+                        <td className="py-3 pr-4 text-foreground/80">{item.base_score}</td>
+                        <td className="py-3 pr-4 text-foreground/80">×{item.trust_weight}</td>
+                        <td className="py-3 pr-4 text-foreground/80">×{item.relevance_multiplier}</td>
+                        <td className="py-3 pr-4 font-bold text-primary">
                           {item.final_score.toFixed(2)}
                         </td>
                       </tr>

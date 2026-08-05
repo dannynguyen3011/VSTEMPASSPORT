@@ -62,21 +62,21 @@ export function Topbar({ title, forceDemo = false }: TopbarProps) {
   const isAuth = authChecked && authUser !== null
 
   return (
-    <header className="h-14 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex items-center justify-between px-3 sm:px-6 shrink-0 gap-2 transition-colors">
+    <header className="h-16 border-b border-border bg-background flex items-center justify-between px-4 sm:px-6 shrink-0 gap-3 transition-colors">
 
       {/* Left: title + demo controls */}
-      <div className="flex items-center gap-3 min-w-0 flex-1">
-        <h1 className="text-base sm:text-lg font-semibold text-gray-800 dark:text-white truncate">{title}</h1>
+      <div className="flex items-center gap-4 min-w-0 flex-1">
+        <h1 className="text-lg sm:text-xl font-semibold text-foreground truncate">{title}</h1>
 
         {/* Demo user switcher — hidden when authenticated */}
         {authChecked && !isAuth && (
-            <label className="flex items-center gap-2 text-xs text-gray-500 shrink-0">
-              <Users className="w-4 h-4 text-gray-400 hidden sm:block" />
+            <label className="flex items-center gap-2 text-sm text-muted-foreground shrink-0">
+              <Users className="w-4 h-4 text-muted-foreground hidden sm:block" />
               <span className="sr-only">Chọn hồ sơ demo</span>
               <select
                 value={currentUserId}
                 onChange={(e) => setCurrentUser(e.target.value)}
-                className="w-[140px] sm:w-[200px] border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1.5 text-xs bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-green-500"
+                className="w-[150px] sm:w-[210px] border border-border rounded-lg px-2.5 py-1.5 text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
                 title="Đổi user — mỗi user có dữ liệu profile & portfolio riêng (demo)"
               >
                 {userOptions.map((opt) => (
@@ -91,17 +91,17 @@ export function Topbar({ title, forceDemo = false }: TopbarProps) {
 
       {/* Right: OCS badge, theme toggle, bell, avatar */}
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-        <div className="hidden sm:flex items-center gap-1.5 bg-green-50 dark:bg-green-500/10 border border-green-200 dark:border-green-500/20 rounded-full px-3 py-1">
-          <div className="w-2 h-2 rounded-full bg-green-500" />
-          <span className="text-sm font-semibold text-green-700 dark:text-green-400">OCS {total_ocs}</span>
-          <span className="text-xs text-green-600 dark:text-green-500">/100</span>
+        <div className="hidden sm:flex items-center gap-1.5 bg-primary/10 border border-primary/20 rounded-full px-3.5 py-1.5">
+          <div className="w-2 h-2 rounded-full bg-primary" />
+          <span className="text-sm font-semibold text-primary">OCS {total_ocs}</span>
+          <span className="text-sm text-primary/70">/100</span>
         </div>
 
         <ThemeToggle variant="ghost" />
 
-        <button type="button" className="relative text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hidden sm:block">
+        <button type="button" className="relative text-muted-foreground hover:text-foreground transition-colors hidden sm:block">
           <Bell className="w-5 h-5" />
-          <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white text-[10px] rounded-full flex items-center justify-center">2</span>
+          <span className="absolute -top-1 -right-1 w-4 h-4 bg-destructive text-white text-[10px] rounded-full flex items-center justify-center">2</span>
         </button>
 
         {/* Authenticated: profile dropdown */}
@@ -110,28 +110,28 @@ export function Topbar({ title, forceDemo = false }: TopbarProps) {
             <button
               type="button"
               onClick={() => setProfileOpen(!profileOpen)}
-              className="flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg px-2 py-1 transition-colors"
+              className="flex items-center gap-2 hover:bg-muted rounded-lg px-2 py-1.5 transition-colors"
             >
-              <div className="w-7 h-7 rounded-full bg-green-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
+              <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-sm font-bold shrink-0">
                 {authUser.name.charAt(0).toUpperCase()}
               </div>
               <div className="text-sm hidden md:block text-left">
-                <div className="font-medium text-gray-700 dark:text-gray-200 leading-tight">{authUser.name}</div>
-                <div className="text-xs text-gray-500 dark:text-gray-400 leading-tight">{authUser.email}</div>
+                <div className="font-medium text-foreground leading-tight">{authUser.name}</div>
+                <div className="text-sm text-muted-foreground leading-tight">{authUser.email}</div>
               </div>
-              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${profileOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform duration-200 ${profileOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {profileOpen && (
-              <div className="absolute right-0 top-full mt-2 w-56 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-50 overflow-hidden">
-                <div className="px-4 py-3 border-b border-gray-100 dark:border-gray-700">
-                  <p className="text-sm font-semibold text-gray-800 dark:text-white truncate">{authUser.name}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{authUser.email}</p>
+              <div className="absolute right-0 top-full mt-2 w-60 bg-popover border border-border rounded-xl shadow-lg z-50 overflow-hidden">
+                <div className="px-4 py-3 border-b border-border">
+                  <p className="text-sm font-semibold text-foreground truncate">{authUser.name}</p>
+                  <p className="text-sm text-muted-foreground truncate">{authUser.email}</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => { setProfileOpen(false); router.push('/profile') }}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-foreground hover:bg-muted transition-colors"
                 >
                   <Settings className="w-4 h-4" />
                   Cài đặt hồ sơ
@@ -139,7 +139,7 @@ export function Topbar({ title, forceDemo = false }: TopbarProps) {
                 <button
                   type="button"
                   onClick={handleLogout}
-                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors"
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
                 >
                   <LogOut className="w-4 h-4" />
                   Đăng xuất
@@ -149,15 +149,15 @@ export function Topbar({ title, forceDemo = false }: TopbarProps) {
           </div>
         ) : (
           /* Demo mode: static avatar */
-          <div className="flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg px-2 py-1 transition-colors">
-            <div className="w-7 h-7 rounded-full bg-green-600 flex items-center justify-center text-white text-xs font-bold">
+          <div className="flex items-center gap-2 hover:bg-muted rounded-lg px-2 py-1.5 transition-colors">
+            <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-sm font-bold">
               {profile.display_name.charAt(0)}
             </div>
             <div className="text-sm hidden md:block">
-              <div className="font-medium text-gray-700 dark:text-gray-200 leading-tight">{profile.display_name}</div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">Lớp {profile.grade} · {profile.school_name}</div>
+              <div className="font-medium text-foreground leading-tight">{profile.display_name}</div>
+              <div className="text-sm text-muted-foreground">Lớp {profile.grade} · {profile.school_name}</div>
             </div>
-            <ChevronDown className="w-4 h-4 text-gray-400" />
+            <ChevronDown className="w-4 h-4 text-muted-foreground" />
           </div>
         )}
       </div>
