@@ -6,7 +6,7 @@ import { DEMO_OPPORTUNITIES } from '@/shared/constants'
 import { useProfileStore } from '@/store/useProfileStore'
 import { getSession } from '@/shared/auth-client'
 import type { Opportunity } from '@/types'
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, Search, X } from 'lucide-react'
 
 type TypeFilter = 'all' | Opportunity['type']
 type ScopeFilter = 'all' | Opportunity['scope']
@@ -42,6 +42,7 @@ export default function OpportunitiesPage() {
   const { profile } = useProfileStore()
 
   const [opportunities, setOpportunities] = useState<Opportunity[]>(DEMO_OPPORTUNITIES)
+  const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all')
   const [onlineOnly, setOnlineOnly] = useState(false)
@@ -78,6 +79,8 @@ export default function OpportunitiesPage() {
   }, [])
 
   const filtered = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase()
+
     return opportunities
       .filter((opportunity) =>
         opportunity.field_tags.includes(majorTag) || opportunity.field_tags.includes('stem')
@@ -86,8 +89,15 @@ export default function OpportunitiesPage() {
       .filter((opportunity) => (scopeFilter === 'all' ? true : opportunity.scope === scopeFilter))
       .filter((opportunity) => (onlineOnly ? opportunity.is_online : true))
       .filter((opportunity) => (freeOnly ? opportunity.is_free : true))
+      .filter((opportunity) => {
+        if (!normalizedQuery) return true
+        return (
+          opportunity.name.toLowerCase().includes(normalizedQuery) ||
+          (opportunity.description ?? '').toLowerCase().includes(normalizedQuery)
+        )
+      })
       .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
-  }, [opportunities, majorTag, typeFilter, scopeFilter, onlineOnly, freeOnly])
+  }, [opportunities, majorTag, typeFilter, scopeFilter, onlineOnly, freeOnly, query])
 
   return (
     <div className="flex flex-col h-full overflow-auto">
@@ -109,6 +119,26 @@ export default function OpportunitiesPage() {
             <div className="rounded-lg border border-primary/20 bg-primary/10 px-3 py-2 text-sm text-primary">
               {filtered.length} cơ hội phù hợp
             </div>
+          </div>
+
+          <div className="relative">
+            <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Tìm theo tên cuộc thi, chương trình, lĩnh vực..."
+              className="w-full border border-border rounded-lg pl-9 pr-9 py-2 text-sm bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+            />
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Xoá tìm kiếm"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -250,10 +280,21 @@ export default function OpportunitiesPage() {
         </section>
 
         {filtered.length === 0 && (
-          <section className="bg-card rounded-xl border border-dashed border-border p-8 text-center">
+          <section className="bg-card rounded-xl border border-dashed border-border p-8 text-center space-y-3">
             <p className="text-sm text-muted-foreground">
-              Không tìm thấy cơ hội phù hợp với bộ lọc hiện tại. Thử mở rộng bộ lọc để xem thêm.
+              {query
+                ? `Không tìm thấy cơ hội nào khớp với "${query}". Thử từ khoá khác hoặc mở rộng bộ lọc.`
+                : 'Không tìm thấy cơ hội phù hợp với bộ lọc hiện tại. Thử mở rộng bộ lọc để xem thêm.'}
             </p>
+            {query && (
+              <button
+                type="button"
+                onClick={() => setQuery('')}
+                className="text-sm font-medium text-primary hover:underline"
+              >
+                Xoá tìm kiếm
+              </button>
+            )}
           </section>
         )}
       </main>
