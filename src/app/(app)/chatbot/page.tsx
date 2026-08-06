@@ -7,7 +7,7 @@ import type { ChatMessage } from '@/types'
 import { SendHorizonal } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
-const SUPPORTED_SCHOOLS = ['vinuni', 'hust', 'usth', 'vju', 'fpt', 'swinburne']
+const SUPPORTED_SCHOOLS = ['vinuni', 'hust', 'usth', 'vju', 'fulbright', 'swinburne']
 const DATA_REFRESHED_AT = '2026-04-03'
 const NOT_FOUND_MESSAGE = 'Toi khong tim thay thong tin chinh thong cho cau hoi nay.'
 const OUT_OF_SCOPE_MESSAGE = 'Hien tai he thong chi ho tro Big 6 Schools.'

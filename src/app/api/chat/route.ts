@@ -37,13 +37,13 @@ export async function POST(req: NextRequest) {
     const { question } = parsed.data
 
     // Guard: scope enforcement (BA AC-C4)
-    const outOfScopeKeywords = ['fulbright', 'rmit', 'uel', 'ueh', 'neu', 'foreign trade']
+    const outOfScopeKeywords = ['rmit', 'uel', 'ueh', 'neu', 'foreign trade']
     const isOutOfScope = outOfScopeKeywords.some((kw) =>
       question.toLowerCase().includes(kw)
     )
     if (isOutOfScope) {
       const msg =
-        'Hiện tại hệ thống chỉ hỗ trợ Big 6 Schools: VinUni, HUST, USTH, VJU, FPT, Swinburne Việt Nam. Vui lòng hỏi về các trường này.'
+        'Hiện tại hệ thống chỉ hỗ trợ Big 6 Schools: VinUni, HUST, USTH, VJU, Fulbright, Swinburne Việt Nam. Vui lòng hỏi về các trường này.'
       return new NextResponse(msg, {
         headers: { 'Content-Type': 'text/plain; charset=utf-8' },
       })
@@ -73,7 +73,7 @@ export async function POST(req: NextRequest) {
  */
 export async function GET(_req: NextRequest) {
   return NextResponse.json({
-    supported_schools: ['VinUni', 'HUST', 'USTH', 'VJU', 'FPT', 'Swinburne'],
+    supported_schools: ['VinUni', 'HUST', 'USTH', 'VJU', 'Fulbright', 'Swinburne'],
     data_freshness_date: DATA_FRESHNESS_DATE,
     disclaimer:
       'Dữ liệu tham chiếu từ văn bản pháp quy chính thống. Vui lòng xác nhận với trường trước khi nộp hồ sơ chính thức.',

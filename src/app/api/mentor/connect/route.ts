@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
       }))
 
       const ocsResult = calculateOCS(activities, profile.target_major)
-      const compassResults = analyzeCompass(profile, activities)
+      const compassResults = analyzeCompass(profile, activities, ocsResult.total_ocs)
 
       // Top 3 strongest activities by final_score
       const top3 = [...ocsResult.breakdown]

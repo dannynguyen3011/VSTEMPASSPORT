@@ -45,7 +45,7 @@ const BIG6 = [
   { name: 'HUST', tag: 'GPA ≥ 8.0', color: 'border-blue-500/40 bg-blue-500/5' },
   { name: 'USTH', tag: 'SAT ≥ 1100', color: 'border-purple-500/40 bg-purple-500/5' },
   { name: 'VJU', tag: 'IELTS ≥ 4.0', color: 'border-amber-500/40 bg-amber-500/5' },
-  { name: 'FPT', tag: 'GPA ≥ 7.0', color: 'border-rose-500/40 bg-rose-500/5' },
+  { name: 'Fulbright', tag: 'IELTS ≥ 6.0', color: 'border-rose-500/40 bg-rose-500/5' },
   { name: 'Swinburne', tag: 'IELTS ≥ 6.0', color: 'border-cyan-500/40 bg-cyan-500/5' },
 ]
 

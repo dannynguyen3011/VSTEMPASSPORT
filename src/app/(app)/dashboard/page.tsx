@@ -4,7 +4,8 @@ import Link from 'next/link'
 import { Topbar } from '@/components/shared/Topbar'
 import { useProfileStore } from '@/store/useProfileStore'
 import { calculateOCS } from '@/shared/ocs'
-import { BIG6_SCHOOLS, CATEGORY_LABELS, CATEGORY_COLORS } from '@/shared/constants'
+import { analyzeCompass } from '@/shared/matching'
+import { CATEGORY_LABELS, CATEGORY_COLORS } from '@/shared/constants'
 import {
   RadarChart,
   Radar,
@@ -25,26 +26,10 @@ const RADAR_CATEGORIES: { label: string; categories: ActivityCategory[] }[] = [
   { label: 'Social Impact', categories: ['green_ethics', 'extracurricular'] },
 ]
 
-function computeTrafficLight(
-  gpa: number,
-  sat: number,
-  ielts: number,
-  school: (typeof BIG6_SCHOOLS)[0]
-): { light: 'green' | 'yellow' | 'red'; pct: number; label: string } {
-  const passGpa = gpa >= school.min_gpa
-  const passSat = school.min_sat === null ? true : sat >= school.min_sat
-  const passIelts = ielts >= school.min_ielts
-
-  const count = [passGpa, passSat, passIelts].filter(Boolean).length
-
-  if (count === 3) return { light: 'green', pct: 92, label: 'An toàn' }
-  if (count === 2) return { light: 'yellow', pct: 75, label: 'Cần cố gắng' }
-  return { light: 'red', pct: 55, label: 'Cần điều chỉnh' }
-}
-
 export default function DashboardPage() {
   const { profile, activities } = useProfileStore()
   const { total_ocs, breakdown } = calculateOCS(activities, profile.target_major)
+  const compassResults = analyzeCompass(profile, activities, total_ocs)
 
   const slottedCount = activities.filter((a) => a.slot_order !== null).length
   const totalCount = activities.length
@@ -59,10 +44,6 @@ export default function DashboardPage() {
   })
 
   const top5 = breakdown.slice(0, 5)
-
-  const gpa = profile.gpa ?? 0
-  const sat = profile.sat_score ?? 0
-  const ielts = profile.ielts_score ?? 0
 
   const profileIncomplete = profile.gpa === null || profile.sat_score === null || profile.ielts_score === null
   const noActivities = activities.length === 0
@@ -182,30 +163,31 @@ export default function DashboardPage() {
             </p>
           )}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {BIG6_SCHOOLS.map((school) => {
-              const { light, pct, label } = computeTrafficLight(gpa, sat, ielts, school)
+            {compassResults.map((result) => {
               const dotColor =
-                light === 'green' ? 'bg-green-500' : light === 'yellow' ? 'bg-yellow-400' : 'bg-red-500'
+                result.traffic_light === 'safe' ? 'bg-primary' : result.traffic_light === 'try_harder' ? 'bg-yellow-400' : 'bg-red-500'
               const textColor =
-                light === 'green'
+                result.traffic_light === 'safe'
                   ? 'text-primary'
-                  : light === 'yellow'
+                  : result.traffic_light === 'try_harder'
                   ? 'text-yellow-700 dark:text-yellow-400'
                   : 'text-red-600 dark:text-red-400'
+              const label =
+                result.traffic_light === 'safe' ? 'An toàn' : result.traffic_light === 'try_harder' ? 'Cần cố gắng' : 'Cần điều chỉnh'
 
               return (
                 <div
-                  key={school.school_id}
+                  key={result.school_id}
                   className="flex items-center justify-between border border-border rounded-lg p-4 bg-muted/50"
                 >
                   <div className="flex items-center gap-3">
                     <div className={`w-3 h-3 rounded-full ${dotColor} shrink-0`} />
                     <div>
-                      <p className="text-sm font-semibold text-foreground">{school.short_name}</p>
+                      <p className="text-sm font-semibold text-foreground">{result.short_name}</p>
                       <p className={`text-sm font-medium ${textColor}`}>{label}</p>
                     </div>
                   </div>
-                  <span className={`text-lg font-bold ${textColor}`}>{pct}%</span>
+                  <span className={`text-lg font-bold ${textColor}`}>{result.match_percentage}%</span>
                 </div>
               )
             })}

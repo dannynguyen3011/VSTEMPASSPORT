@@ -70,7 +70,7 @@ export function buildInitialUserData(): {
       sat_score: null,
       ielts_score: null,
       target_major: 'cntt',
-      target_schools: ['vinuni', 'hust', 'usth', 'vju', 'fpt', 'swinburne'],
+      target_schools: ['vinuni', 'hust', 'usth', 'vju', 'fulbright', 'swinburne'],
     },
     'user-demo-cntt': {
       user_id: 'user-demo-cntt',
@@ -82,7 +82,7 @@ export function buildInitialUserData(): {
       sat_score: 1550,
       ielts_score: 7.5,
       target_major: 'cntt',
-      target_schools: ['vinuni', 'hust', 'usth', 'vju', 'fpt', 'swinburne'],
+      target_schools: ['vinuni', 'hust', 'usth', 'vju', 'fulbright', 'swinburne'],
     },
     'user-rural': {
       user_id: 'user-rural',
@@ -94,7 +94,7 @@ export function buildInitialUserData(): {
       sat_score: 1050,
       ielts_score: 5.5,
       target_major: 'cntt',
-      target_schools: ['hust', 'usth', 'vju', 'fpt', 'swinburne', 'vinuni'],
+      target_schools: ['hust', 'usth', 'vju', 'fulbright', 'swinburne', 'vinuni'],
     },
     'user-toan': {
       user_id: 'user-toan',
@@ -106,7 +106,7 @@ export function buildInitialUserData(): {
       sat_score: 1400,
       ielts_score: 7.0,
       target_major: 'toan_thong_ke',
-      target_schools: ['vinuni', 'usth', 'vju', 'hust', 'fpt', 'swinburne'],
+      target_schools: ['vinuni', 'usth', 'vju', 'hust', 'fulbright', 'swinburne'],
     },
   }
 

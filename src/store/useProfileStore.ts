@@ -104,7 +104,7 @@ export const useProfileStore = create<ProfileStore>()(
             sat_score: null,
             ielts_score: null,
             target_major: payload.target_major,
-            target_schools: ['vinuni', 'hust', 'usth', 'vju', 'fpt', 'swinburne'],
+            target_schools: ['vinuni', 'hust', 'usth', 'vju', 'fulbright', 'swinburne'],
           }
           const nextOption: UserSwitchOption = {
             user_id: userId,

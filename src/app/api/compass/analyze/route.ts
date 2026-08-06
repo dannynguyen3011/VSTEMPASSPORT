@@ -76,8 +76,8 @@ export async function POST(req: NextRequest) {
     }))
 
     // Run matching + OCS
-    const compassResults = analyzeCompass(profile, activities)
     const ocsResult = calculateOCS(activities, profile.target_major)
+    const compassResults = analyzeCompass(profile, activities, ocsResult.total_ocs)
 
     // Unrealistic goal warning
     const warning = detectUnrealisticGoal(profile)

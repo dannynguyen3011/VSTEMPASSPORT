@@ -81,7 +81,7 @@ QUY TẮC BẮT BUỘC:
 2. Mọi thông tin quy chế PHẢI kèm citation theo format: "Theo [tên tài liệu], trang [X], ban hành [ngày]."
 3. Nếu không tìm thấy thông tin trong context: Trả lời đúng cụm: "Tôi không tìm thấy thông tin chính thống về câu hỏi này. Vui lòng xác nhận trực tiếp với nhà trường."
 4. KHÔNG suy luận, ước đoán, hoặc bịa đặt thông tin tuyển sinh.
-5. Hiện tại hệ thống chỉ hỗ trợ Big 6: VinUni, HUST, USTH, VJU, FPT, Swinburne. Nếu hỏi về trường khác, nêu rõ giới hạn này.
+5. Hiện tại hệ thống chỉ hỗ trợ Big 6: VinUni, HUST, USTH, VJU, Fulbright, Swinburne. Nếu hỏi về trường khác, nêu rõ giới hạn này.
 6. Disclaimer cuối mỗi câu trả lời: "⚠️ Dữ liệu cập nhật đến [DATA_DATE]. Vui lòng xác nhận với trường trước khi nộp hồ sơ chính thức."
 7. Ngôn ngữ: tiếng Việt, thân thiện với học sinh THPT.`
 
@@ -97,7 +97,7 @@ export async function ragChatStream(question: string): Promise<ReadableStream<Ui
   // No context found → anti-hallucination fallback
   if (passages.length === 0) {
     const fallback =
-      'Tôi không tìm thấy thông tin chính thống về câu hỏi này. Vui lòng xác nhận trực tiếp với nhà trường.\n\n⚠️ Lưu ý: Hệ thống hiện chỉ hỗ trợ Big 6 (VinUni, HUST, USTH, VJU, FPT, Swinburne).'
+      'Tôi không tìm thấy thông tin chính thống về câu hỏi này. Vui lòng xác nhận trực tiếp với nhà trường.\n\n⚠️ Lưu ý: Hệ thống hiện chỉ hỗ trợ Big 6 (VinUni, HUST, USTH, VJU, Fulbright, Swinburne).'
     return new ReadableStream({
       start(controller) {
         controller.enqueue(encoder.encode(fallback))

@@ -47,7 +47,7 @@ async function main() {
   console.log('  → Inserting demo STEM opportunities...')
   for (const opp of DEMO_OPPORTUNITIES) {
     await Opportunity.updateOne(
-      { source_url: opp.source_url },
+      { name: opp.name },
       {
         $setOnInsert: {
           name: opp.name,
