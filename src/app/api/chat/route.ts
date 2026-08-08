@@ -1,16 +1,17 @@
 /**
  * POST /api/chat
  *
- * RAG Chatbot endpoint — Streaming response (BA §2.5)
+ * RAG Chatbot endpoint — synchronous JSON response (BA §2.5)
  * Anti-hallucination: citation required, fallback if no context found.
  *
  * Body: { question: string }
- * Response: text/plain stream (Server-Sent Events compatible)
+ * Response: { answer: string, citations: Citation[], data_freshness_date: string }
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { requireAuth } from '@/backend/auth'
-import { ragChatStream } from '@/backend/rag'
+import { ragChat } from '@/backend/rag'
+import { mentionsOtherKnownSchool, OUT_OF_SCOPE_MESSAGE, SUPPORTED_SCHOOL_NAMES } from '@/shared/config/scope'
 
 const requestSchema = z.object({
   question: z.string().min(1).max(1000),
@@ -36,29 +37,22 @@ export async function POST(req: NextRequest) {
 
     const { question } = parsed.data
 
-    // Guard: scope enforcement (BA AC-C4)
-    const outOfScopeKeywords = ['fulbright', 'rmit', 'uel', 'ueh', 'neu', 'foreign trade']
-    const isOutOfScope = outOfScopeKeywords.some((kw) =>
-      question.toLowerCase().includes(kw)
-    )
-    if (isOutOfScope) {
-      const msg =
-        'Hiện tại hệ thống chỉ hỗ trợ Big 6 Schools: VinUni, HUST, USTH, VJU, FPT, Swinburne Việt Nam. Vui lòng hỏi về các trường này.'
-      return new NextResponse(msg, {
-        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    // Guard: scope enforcement (BA AC-C4) — cheap fast-path refusal before
+    // hitting retrieval/the LLM at all; the similarity threshold in
+    // retrievePassages is the real safety net for anything this misses.
+    if (mentionsOtherKnownSchool(question)) {
+      return NextResponse.json({
+        answer: OUT_OF_SCOPE_MESSAGE,
+        citations: [],
+        data_freshness_date: DATA_FRESHNESS_DATE,
       })
     }
 
-    // Get RAG stream
-    const stream = await ragChatStream(question)
+    const result = await ragChat(question)
 
-    return new NextResponse(stream, {
-      headers: {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Transfer-Encoding': 'chunked',
-        'Cache-Control': 'no-cache',
-        'X-Data-Freshness-Date': DATA_FRESHNESS_DATE,
-      },
+    return NextResponse.json({
+      ...result,
+      data_freshness_date: DATA_FRESHNESS_DATE,
     })
   } catch (e) {
     if (e instanceof Response) return e
@@ -73,7 +67,7 @@ export async function POST(req: NextRequest) {
  */
 export async function GET(_req: NextRequest) {
   return NextResponse.json({
-    supported_schools: ['VinUni', 'HUST', 'USTH', 'VJU', 'FPT', 'Swinburne'],
+    supported_schools: SUPPORTED_SCHOOL_NAMES,
     data_freshness_date: DATA_FRESHNESS_DATE,
     disclaimer:
       'Dữ liệu tham chiếu từ văn bản pháp quy chính thống. Vui lòng xác nhận với trường trước khi nộp hồ sơ chính thức.',

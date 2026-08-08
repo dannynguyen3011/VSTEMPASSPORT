@@ -1,3 +1,5 @@
+import type { Citation } from '@/shared/schemas/citation'
+
 export type ActivityCategory =
   | 'scholarship'
   | 'competition'
@@ -109,12 +111,7 @@ export interface ChatMessage {
   timestamp: string
 }
 
-export interface Citation {
-  document: string
-  page: string
-  published_date: string
-  excerpt: string
-}
+export type { Citation }
 
 export interface MentorProfile {
   mentor_id: string

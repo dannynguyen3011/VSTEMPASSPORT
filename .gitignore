@@ -9,6 +9,9 @@
 # testing
 /coverage
 
+# RAG source corpus (real admissions PDFs — not redistributable)
+/corpus
+
 # next.js
 /.next/
 /out/

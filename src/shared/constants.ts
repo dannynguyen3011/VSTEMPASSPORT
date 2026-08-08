@@ -1,4 +1,4 @@
-import type { ActivityCategory, SchoolPersona, Activity, Opportunity, MentorProfile, ChatMessage } from '@/types'
+import type { ActivityCategory, SchoolPersona, Activity, Opportunity, MentorProfile } from '@/types'
 
 export const CATEGORY_LABELS: Record<ActivityCategory, string> = {
   scholarship: 'Học bổng',
@@ -383,47 +383,3 @@ export const DEMO_MENTORS: MentorProfile[] = [
   },
 ]
 
-export const DEMO_CHAT: ChatMessage[] = [
-  {
-    id: '1',
-    role: 'user',
-    content: 'VinUni yêu cầu SAT tối thiểu bao nhiêu cho ngành CNTT?',
-    citations: [],
-    timestamp: '2026-04-03T10:00:00Z',
-  },
-  {
-    id: '2',
-    role: 'assistant',
-    content: 'Theo Đề án tuyển sinh VinUni 2026, VinUni không công bố ngưỡng SAT tối thiểu cụ thể, nhưng dựa trên tiêu chí "tố chất thông minh vượt trội" (mục A trong AACC framework), ước tính cần khoảng **1450/1600** để cạnh tranh.\n\nCần lưu ý: VinUni đánh giá toàn diện theo 4 tiêu chí AACC:\n- **A**mbition (Khát vọng)\n- **A**cademic (Học thuật)\n- **C**haracter (Phẩm chất)\n- **C**ommitment (Cam kết)\n\nSAT chỉ là một phần của "Academic" — Portfolio và phỏng vấn có trọng số tương đương.',
-    citations: [
-      {
-        document: 'Đề án tuyển sinh VinUni 2026',
-        page: '12',
-        published_date: '2026-01-15',
-        excerpt: 'Tiêu chí tuyển sinh bao gồm đánh giá toàn diện theo framework AACC...',
-      },
-    ],
-    timestamp: '2026-04-03T10:00:05Z',
-  },
-  {
-    id: '3',
-    role: 'user',
-    content: 'HUST xét tuyển tài năng cần điều kiện gì?',
-    citations: [],
-    timestamp: '2026-04-03T10:01:00Z',
-  },
-  {
-    id: '4',
-    role: 'assistant',
-    content: 'Theo Đề án tuyển sinh HUST 2026, phương thức **Xét tuyển Tài năng** yêu cầu:\n\n1. **GPA**: ≥ 8.0/10 cả 3 năm lớp 10, 11, 12\n2. **Chứng chỉ ngoại ngữ**: IELTS ≥ 5.0 (chương trình tiếng Anh) hoặc IELTS ≥ 5.5 (liên kết quốc tế)\n3. **SAT** được chấp nhận kết hợp với GPA ≥ 8.0\n4. **Điểm thưởng**: Tối đa 10/100 điểm cho giải thưởng văn-thể-mỹ và hoạt động xã hội\n\n⚠️ Lưu ý: GPA phải đạt ≥ 8.0 **mỗi năm**, không phải trung bình cộng.',
-    citations: [
-      {
-        document: 'Đề án tuyển sinh HUST 2026',
-        page: '8',
-        published_date: '2026-02-01',
-        excerpt: 'Phương thức 2: Xét tuyển kết hợp (Xét tuyển Tài năng) - Điều kiện: GPA ≥ 8.0 mỗi năm học...',
-      },
-    ],
-    timestamp: '2026-04-03T10:01:08Z',
-  },
-]

@@ -1,16 +1,21 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Topbar } from '@/components/shared/Topbar'
-import { DEMO_CHAT } from '@/shared/constants'
-import type { ChatMessage } from '@/types'
+import { getSupabaseBrowser } from '@/shared/supabase-browser'
+import type { ChatMessage, Citation } from '@/types'
 import { SendHorizonal } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
-const SUPPORTED_SCHOOLS = ['vinuni', 'hust', 'usth', 'vju', 'fpt', 'swinburne']
-const DATA_REFRESHED_AT = '2026-04-03'
-const NOT_FOUND_MESSAGE = 'Toi khong tim thay thong tin chinh thong cho cau hoi nay.'
-const OUT_OF_SCOPE_MESSAGE = 'Hien tai he thong chi ho tro Big 6 Schools.'
+const SESSION_EXPIRED_MESSAGE = 'Phien dang nhap da het han. Vui long dang nhap lai.'
+const INVALID_QUESTION_MESSAGE = 'Cau hoi khong hop le hoac qua dai.'
+const SERVER_ERROR_MESSAGE = 'Loi he thong. Vui long thu lai sau.'
+
+interface ChatApiResponse {
+  answer: string
+  citations: Citation[]
+  data_freshness_date: string
+}
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString('vi-VN', {
@@ -19,37 +24,23 @@ function formatTime(iso: string) {
   })
 }
 
-function includesSupportedSchool(question: string) {
-  const normalized = question.toLowerCase()
-  return SUPPORTED_SCHOOLS.some((school) => normalized.includes(school))
-}
-
-function selectDemoAnswer(question: string): ChatMessage | null {
-  const normalized = question.toLowerCase()
-
-  if (normalized.includes('vinuni') && normalized.includes('sat')) {
-    return DEMO_CHAT[1] ?? null
+function buildMessage(role: ChatMessage['role'], content: string, citations: Citation[] = []): ChatMessage {
+  return {
+    id: `${role}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    role,
+    content,
+    citations,
+    timestamp: new Date().toISOString(),
   }
-
-  if (normalized.includes('hust') && (normalized.includes('tai nang') || normalized.includes('xet tuyen'))) {
-    return DEMO_CHAT[3] ?? null
-  }
-
-  return null
 }
 
 export default function ChatbotPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>(DEMO_CHAT)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const chatContainerRef = useRef<HTMLElement | null>(null)
 
   const canSend = input.trim().length > 0 && !loading
-
-  const latestUpdatedText = useMemo(
-    () => `Cap nhat du lieu lan cuoi: ${DATA_REFRESHED_AT}`,
-    []
-  )
 
   useEffect(() => {
     if (chatContainerRef.current) {
@@ -61,49 +52,51 @@ export default function ChatbotPage() {
     const question = input.trim()
     if (!question) return
 
-    const userMessage: ChatMessage = {
-      id: `user-${Date.now()}`,
-      role: 'user',
-      content: question,
-      citations: [],
-      timestamp: new Date().toISOString(),
-    }
-
-    setMessages((prev) => [...prev, userMessage])
+    setMessages((prev) => [...prev, buildMessage('user', question)])
     setInput('')
     setLoading(true)
 
-    await new Promise((resolve) => setTimeout(resolve, 500))
+    try {
+      const {
+        data: { session },
+      } = await getSupabaseBrowser().auth.getSession()
+      const token = session?.access_token
 
-    const outOfScope = !includesSupportedSchool(question) && /truong|dai hoc|university/i.test(question)
-    const demoAnswer = selectDemoAnswer(question)
+      if (!token) {
+        setMessages((prev) => [...prev, buildMessage('assistant', SESSION_EXPIRED_MESSAGE)])
+        return
+      }
 
-    const assistantMessage: ChatMessage = outOfScope
-      ? {
-          id: `assistant-${Date.now()}`,
-          role: 'assistant',
-          content: `${OUT_OF_SCOPE_MESSAGE}\n\n${latestUpdatedText}`,
-          citations: [],
-          timestamp: new Date().toISOString(),
-        }
-      : demoAnswer
-      ? {
-          id: `assistant-${Date.now()}`,
-          role: 'assistant',
-          content: `${demoAnswer.content}\n\n${latestUpdatedText}`,
-          citations: demoAnswer.citations,
-          timestamp: new Date().toISOString(),
-        }
-      : {
-          id: `assistant-${Date.now()}`,
-          role: 'assistant',
-          content: `${NOT_FOUND_MESSAGE}\n\n${latestUpdatedText}`,
-          citations: [],
-          timestamp: new Date().toISOString(),
-        }
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ question }),
+      })
 
-    setMessages((prev) => [...prev, assistantMessage])
-    setLoading(false)
+      if (res.status === 401) {
+        setMessages((prev) => [...prev, buildMessage('assistant', SESSION_EXPIRED_MESSAGE)])
+        return
+      }
+      if (res.status === 422) {
+        setMessages((prev) => [...prev, buildMessage('assistant', INVALID_QUESTION_MESSAGE)])
+        return
+      }
+      if (!res.ok) {
+        setMessages((prev) => [...prev, buildMessage('assistant', SERVER_ERROR_MESSAGE)])
+        return
+      }
+
+      const data: ChatApiResponse = await res.json()
+      const content = `${data.answer}\n\n⚠️ Du lieu cap nhat den ${data.data_freshness_date}.`
+      setMessages((prev) => [...prev, buildMessage('assistant', content, data.citations)])
+    } catch {
+      setMessages((prev) => [...prev, buildMessage('assistant', SERVER_ERROR_MESSAGE)])
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
