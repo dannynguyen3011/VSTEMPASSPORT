@@ -35,3 +35,14 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .env*
+
+# RAG pipeline intermediates
+.cache/
+
+# Source documents — large binaries, not distributed with the repo.
+# manifest.json is the exception: it is curated metadata that every citation is
+# built from, and re-creating it means redoing the human review.
+# Ignore the contents, not the directory itself — git will not descend into an
+# ignored directory, so `data/` would make the negation below unreachable.
+data/*
+!data/manifest.json
