@@ -31,6 +31,11 @@ function daysUntil(deadline: string) {
   return Math.ceil(diffMs / (1000 * 60 * 60 * 24))
 }
 
+function monthLabel(key: string) {
+  const [year, month] = key.split('-')
+  return `Tháng ${Number(month)}/${year}`
+}
+
 function deadlineTone(days: number) {
   if (days < 0) return { text: 'Đã hết hạn', className: 'bg-muted text-muted-foreground' }
   if (days <= 3) return { text: `Còn ${days} ngày`, className: 'bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-400' }
@@ -45,6 +50,7 @@ export default function OpportunitiesPage() {
   const [query, setQuery] = useState('')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [scopeFilter, setScopeFilter] = useState<ScopeFilter>('all')
+  const [monthFilter, setMonthFilter] = useState<'all' | string>('all')
   const [onlineOnly, setOnlineOnly] = useState(false)
   const [freeOnly, setFreeOnly] = useState(false)
 
@@ -78,15 +84,34 @@ export default function OpportunitiesPage() {
       .catch((err) => console.error('[opportunities] fetch failed:', err))
   }, [])
 
+  // Expired entries drop out on their own as the deadline passes — no manual
+  // cleanup needed (BA §3.6.1: "Ẩn entry nếu deadline đã qua").
+  const notExpired = useMemo(
+    () => opportunities.filter((opportunity) => daysUntil(opportunity.deadline) >= 0),
+    [opportunities]
+  )
+
+  const relevantToMajor = useMemo(
+    () =>
+      notExpired.filter(
+        (opportunity) => opportunity.field_tags.includes(majorTag) || opportunity.field_tags.includes('stem')
+      ),
+    [notExpired, majorTag]
+  )
+
+  const availableMonths = useMemo(() => {
+    const keys = new Set<string>()
+    relevantToMajor.forEach((opportunity) => keys.add(opportunity.deadline.slice(0, 7)))
+    return [...keys].sort()
+  }, [relevantToMajor])
+
   const filtered = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase()
 
-    return opportunities
-      .filter((opportunity) =>
-        opportunity.field_tags.includes(majorTag) || opportunity.field_tags.includes('stem')
-      )
+    return relevantToMajor
       .filter((opportunity) => (typeFilter === 'all' ? true : opportunity.type === typeFilter))
       .filter((opportunity) => (scopeFilter === 'all' ? true : opportunity.scope === scopeFilter))
+      .filter((opportunity) => (monthFilter === 'all' ? true : opportunity.deadline.startsWith(monthFilter)))
       .filter((opportunity) => (onlineOnly ? opportunity.is_online : true))
       .filter((opportunity) => (freeOnly ? opportunity.is_free : true))
       .filter((opportunity) => {
@@ -97,7 +122,7 @@ export default function OpportunitiesPage() {
         )
       })
       .sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
-  }, [opportunities, majorTag, typeFilter, scopeFilter, onlineOnly, freeOnly, query])
+  }, [relevantToMajor, typeFilter, scopeFilter, monthFilter, onlineOnly, freeOnly, query])
 
   return (
     <div className="flex flex-col h-full overflow-auto">
@@ -121,24 +146,40 @@ export default function OpportunitiesPage() {
             </div>
           </div>
 
-          <div className="relative">
-            <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Tìm theo tên cuộc thi, chương trình, lĩnh vực..."
-              className="w-full border border-border rounded-lg pl-9 pr-9 py-2 text-sm bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-            />
-            {query && (
-              <button
-                type="button"
-                onClick={() => setQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                aria-label="Xoá tìm kiếm"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            )}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Tìm theo tên cuộc thi, chương trình, lĩnh vực..."
+                className="w-full border border-border rounded-lg pl-9 pr-9 py-2 text-sm bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
+              />
+              {query && (
+                <button
+                  type="button"
+                  onClick={() => setQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Xoá tìm kiếm"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            <select
+              value={monthFilter}
+              onChange={(event) => setMonthFilter(event.target.value)}
+              title="Lọc theo tháng"
+              className="border border-border rounded-lg px-3 py-2 text-sm bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-primary/30 cursor-pointer sm:w-56"
+            >
+              <option value="all">Tất cả các tháng</option>
+              {availableMonths.map((key) => (
+                <option key={key} value={key}>
+                  {monthLabel(key)}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -284,15 +325,24 @@ export default function OpportunitiesPage() {
             <p className="text-sm text-muted-foreground">
               {query
                 ? `Không tìm thấy cơ hội nào khớp với "${query}". Thử từ khoá khác hoặc mở rộng bộ lọc.`
+                : monthFilter !== 'all'
+                ? `Không có cơ hội nào còn hạn trong ${monthLabel(monthFilter)}. Thử tháng khác hoặc "Tất cả các tháng".`
                 : 'Không tìm thấy cơ hội phù hợp với bộ lọc hiện tại. Thử mở rộng bộ lọc để xem thêm.'}
             </p>
-            {query && (
+            {(query || monthFilter !== 'all' || typeFilter !== 'all' || scopeFilter !== 'all' || onlineOnly || freeOnly) && (
               <button
                 type="button"
-                onClick={() => setQuery('')}
+                onClick={() => {
+                  setQuery('')
+                  setMonthFilter('all')
+                  setTypeFilter('all')
+                  setScopeFilter('all')
+                  setOnlineOnly(false)
+                  setFreeOnly(false)
+                }}
                 className="text-sm font-medium text-primary hover:underline"
               >
-                Xoá tìm kiếm
+                Xoá tất cả bộ lọc
               </button>
             )}
           </section>
