@@ -120,14 +120,19 @@ export const SCHOOLS: School[] = [
     aliases: ['iuh', 'cong nghiep tphcm', 'cong nghiep tp hcm'],
   },
   {
-    code: 'OU',
+    code: 'HCMOU',
     name: 'Trường Đại học Mở TP.HCM',
-    aliases: ['dai hoc mo tphcm', 'dai hoc mo tp hcm', 'truong dai hoc mo'],
+    aliases: ['hcmou', 'dai hoc mo tphcm', 'dai hoc mo tp hcm', 'truong dai hoc mo'],
   },
   {
-    code: 'IU',
+    code: 'HCMIU',
     name: 'Trường Đại học Quốc tế, ĐHQG TP.HCM',
-    aliases: ['dai hoc quoc te', 'quoc te dhqg'],
+    aliases: ['hcmiu', 'dai hoc quoc te', 'quoc te dhqg'],
+  },
+  {
+    code: 'VNUIS',
+    name: 'Khoa Quốc tế, ĐHQG Hà Nội (VNU-IS)',
+    aliases: ['vnuis', 'vnu-is', 'khoa quoc te dhqg'],
   },
   {
     code: 'UIT',
