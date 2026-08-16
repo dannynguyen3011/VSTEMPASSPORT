@@ -247,22 +247,59 @@ export async function ragChatStream(
     messages: buildMessages(question, passages, history),
   })
 
+  // Set once the consumer goes away, so we stop pulling from OpenAI instead of
+  // paying for tokens nobody will read.
+  let aborted = false
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
+      /**
+       * Enqueue only while the consumer is still attached. A client that closes
+       * the connection mid-answer — navigating away, closing the tab — puts the
+       * controller in a closed state, and enqueueing then throws. Without this
+       * guard the throw lands in the catch below, which enqueues its error
+       * message into the same closed controller and throws again.
+       */
+      const write = (text: string): boolean => {
+        if (aborted) return false
+        try {
+          controller.enqueue(encoder.encode(text))
+          return true
+        } catch {
+          aborted = true
+          return false
+        }
+      }
+
       try {
         for await (const chunk of completion) {
+          if (aborted) break
           const delta = chunk.choices[0]?.delta?.content
-          if (delta) controller.enqueue(encoder.encode(delta))
+          if (delta && !write(delta)) break
         }
-        controller.enqueue(encoder.encode(DISCLAIMER))
+        write(DISCLAIMER)
       } catch (err) {
-        console.error('[rag] stream failed:', err)
-        controller.enqueue(
-          encoder.encode('\n\n[Lỗi hệ thống] Không thể kết nối đến AI engine. Vui lòng thử lại sau.')
-        )
+        if (!aborted) {
+          console.error('[rag] stream failed:', err)
+          write('\n\n[Lỗi hệ thống] Không thể kết nối đến AI engine. Vui lòng thử lại sau.')
+        }
       } finally {
-        controller.close()
+        completion.controller.abort()
+        if (!aborted) {
+          try {
+            controller.close()
+          } catch {
+            // Already closed by the consumer — nothing to do.
+          }
+        }
       }
+    },
+
+    cancel() {
+      // The consumer detached. Stop the upstream request; the loop above sees
+      // `aborted` and exits rather than running the generation to completion.
+      aborted = true
+      completion.controller.abort()
     },
   })
 
