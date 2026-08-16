@@ -39,6 +39,24 @@ const RE_NUMBERED = /^[ \t]*((?:\d+(?:\.\d+)*|[IVXLCDM]+)[.)])\s+(\S[^\n]{2,90})
 /** A short all-caps line, the usual heading style in these schemes */
 const RE_CAPS = /^[ \t]*([A-ZĐÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚĂĨŨƠƯẠ-Ỹ][A-ZĐÀ-Ỹ0-9\s,./()-]{6,80})$/gm
 
+/** Subject-combination and programme codes: A00, D01D06, X78X98, IT-E7, VJU2. */
+const RE_CODE_TOKEN = /^[A-ZĐ]{1,4}-?\d[\dA-ZĐ]*$/
+
+/**
+ * Admission schemes are full of code tables whose rows are all-caps and so
+ * match the heading pattern — "A00 A01D28 C01 C02 D01D06" is a table row, not a
+ * section. A heading has to contain real words, not just codes.
+ */
+function looksLikeTableRow(heading: string): boolean {
+  const tokens = heading.split(/\s+/).filter(Boolean)
+  if (tokens.length === 0) return true
+  const codes = tokens.filter((t) => RE_CODE_TOKEN.test(t)).length
+  if (codes / tokens.length >= 0.5) return true
+  // A genuine Vietnamese heading has at least one word of real length that is
+  // not a code and not a stray glyph.
+  return !tokens.some((t) => t.length >= 4 && !RE_CODE_TOKEN.test(t) && /[A-ZĐÀ-Ỹ]{4}/.test(t))
+}
+
 interface PageSpan {
   num: number | null
   start: number
@@ -81,6 +99,9 @@ function findSections(text: string, docType: DocType): Section[] {
     for (const m of text.matchAll(re)) {
       if (m.index === undefined) continue
       const heading = m[0].trim().replace(/\s+/g, ' ').slice(0, 100)
+      // Only the all-caps pattern is prone to table rows; Chương/Điều/numbered
+      // headings are already anchored to a keyword or a numbering prefix.
+      if (re === RE_CAPS && looksLikeTableRow(heading)) continue
       marks.push({ pos: m.index, heading })
     }
   }

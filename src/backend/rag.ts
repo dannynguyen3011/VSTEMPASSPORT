@@ -2,6 +2,10 @@
  * RAG Chatbot Pipeline — ChromaDB + Claude API
  * BA §2.5 — Anti-hallucination: citation required, no out-of-context generation
  *
+ * Both retrieval and answering run on OpenAI (see src/backend/openai.ts).
+ * Anthropic is still used by the offline ingest scripts under scripts/rag/, but
+ * is no longer on the request path.
+ *
  * Retrieval design (see scripts/rag/ for the ingest side):
  *
  *  - Vectors are computed with OpenAI text-embedding-3-large via
@@ -20,9 +24,9 @@
  *    populated, and Claude would be handed irrelevant text for every
  *    off-topic question.
  */
-import Anthropic from '@anthropic-ai/sdk'
 import { ChromaClient, Collection } from 'chromadb'
 import { embedQuery } from './embeddings'
+import { CHAT_MODEL, getOpenAI } from './openai'
 import { detectSchools } from '@/shared/schools'
 
 const COLLECTION_NAME = 'green_stem_corpus'
@@ -148,15 +152,40 @@ QUY TẮC BẮT BUỘC:
 const DISCLAIMER =
   '\n\n⚠️ Vui lòng xác nhận với trường trước khi nộp hồ sơ chính thức.'
 
+/** Answer budget. Reasoning models consume part of this before any visible text. */
+const MAX_ANSWER_TOKENS = 4096
+
+/** The bracketed context prefix chunk.ts prepends, e.g. "[Đề án … › Điều 5]". */
+const CHUNK_PREFIX = /^\[[^\]]*\]\s*/
+
 function buildContext(passages: RagChunk[]): string {
   return passages
-    .map((p, i) => `[${i + 1}] CITATION: ${formatCitation(p)}\n${p.content}`)
+    .map((p, i) => {
+      // Strip the prefix before the model sees it. It exists to give the
+      // embedding something to match a school name against, and has no job at
+      // inference time — but left in, it reads as a second, competing citation
+      // and the model quotes it instead of the CITATION line, sometimes
+      // surfacing a garbled section heading as if it were a source.
+      const body = p.content.replace(CHUNK_PREFIX, '')
+      return `[${i + 1}] CITATION: ${formatCitation(p)}\n${body}`
+    })
     .join('\n\n---\n\n')
 }
 
 export interface ChatTurn {
   role: 'user' | 'assistant'
   content: string
+}
+
+function buildMessages(question: string, passages: RagChunk[], history: ChatTurn[]) {
+  return [
+    { role: 'system' as const, content: SYSTEM_PROMPT },
+    ...history.map((turn) => ({ role: turn.role, content: turn.content })),
+    {
+      role: 'user' as const,
+      content: `CONTEXT:\n${buildContext(passages)}\n\nCÂU HỎI: ${question}`,
+    },
+  ]
 }
 
 const NO_CONTEXT_MESSAGE =
@@ -176,9 +205,7 @@ function toCitations(passages: RagChunk[]): RagCitation[] {
     document: p.docNumber ? `${p.source} (số ${p.docNumber})` : p.source,
     page: p.page,
     published_date: p.date,
-    // Strip the bracketed context prefix that chunk.ts prepends — it is there
-    // for the embedding, not for the reader.
-    excerpt: p.content.replace(/^\[[^\]]*\]\s*/, '').slice(0, 200).trim() + '…',
+    excerpt: p.content.replace(CHUNK_PREFIX, '').slice(0, 200).trim() + '…',
   }))
 }
 
@@ -209,27 +236,23 @@ export async function ragChatStream(
     }
   }
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-  const anthropicStream = client.messages.stream({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 2048,
-    system: SYSTEM_PROMPT,
-    messages: [
-      ...history.map((turn) => ({ role: turn.role, content: turn.content })),
-      {
-        role: 'user' as const,
-        content: `CONTEXT:\n${buildContext(passages)}\n\nCÂU HỎI: ${question}`,
-      },
-    ],
+  const completion = await getOpenAI().chat.completions.create({
+    model: CHAT_MODEL,
+    // max_completion_tokens, not max_tokens: the gpt-5 family rejects the
+    // latter, and every current model accepts the former. Reasoning models
+    // spend part of this budget before emitting any visible text, so it has to
+    // be generous or the answer comes back empty.
+    max_completion_tokens: MAX_ANSWER_TOKENS,
+    stream: true,
+    messages: buildMessages(question, passages, history),
   })
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        for await (const chunk of anthropicStream) {
-          if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
-            controller.enqueue(encoder.encode(chunk.delta.text))
-          }
+        for await (const chunk of completion) {
+          const delta = chunk.choices[0]?.delta?.content
+          if (delta) controller.enqueue(encoder.encode(delta))
         }
         controller.enqueue(encoder.encode(DISCLAIMER))
       } catch (err) {
@@ -262,21 +285,13 @@ export async function ragChat(
     return { answer: NO_CONTEXT_MESSAGE, citations: [] }
   }
 
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-  const response = await client.messages.create({
-    model: 'claude-sonnet-4-6',
-    max_tokens: 2048,
-    system: SYSTEM_PROMPT,
-    messages: [
-      ...history.map((turn) => ({ role: turn.role, content: turn.content })),
-      {
-        role: 'user' as const,
-        content: `CONTEXT:\n${buildContext(passages)}\n\nCÂU HỎI: ${question}`,
-      },
-    ],
+  const response = await getOpenAI().chat.completions.create({
+    model: CHAT_MODEL,
+    max_completion_tokens: MAX_ANSWER_TOKENS,
+    messages: buildMessages(question, passages, history),
   })
 
-  const answer = response.content[0]?.type === 'text' ? response.content[0].text : ''
+  const answer = response.choices[0]?.message?.content ?? ''
 
   return {
     answer,
