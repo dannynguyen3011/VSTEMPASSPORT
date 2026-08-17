@@ -6,10 +6,10 @@
  * from two different models are not comparable, and mixing them fails silently
  * as bad retrieval rather than as an error.
  *
- * Chroma's own default embedding function is deliberately unused — it is an
- * English model and retrieves poorly over Vietnamese legal text. Because we
- * supply vectors ourselves, every Chroma call must use `queryEmbeddings`,
- * never `queryTexts`.
+ * Vectors are stored in MongoDB Atlas and searched with $vectorSearch, so the
+ * same model must be used on both sides: vectors from two different models are
+ * not comparable, and mixing them fails silently as poor retrieval rather than
+ * as an error.
  */
 
 export const EMBEDDING_MODEL = 'text-embedding-3-large'

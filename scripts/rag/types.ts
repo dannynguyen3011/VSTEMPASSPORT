@@ -6,7 +6,7 @@
  *   2. ocr.ts      scanned PDFs       -> .cache/rag/text/*.json   (fills pages in place)
  *   3. manifest.ts .cache/rag/text/*  -> data/manifest.json       (ManifestEntry[])
  *   4. chunk.ts    text + manifest    -> .cache/rag/chunks.json   (Chunk[])
- *   5. index.ts    chunks             -> ChromaDB
+ *   5. index.ts    chunks             -> MongoDB Atlas (ragchunks + vector index)
  */
 
 /** Classification drives chunking strategy and citation wording. */

@@ -8,7 +8,11 @@
     "start": "next start",
     "lint": "next lint",
     "db:seed": "npx tsx scripts/seed-db.ts",
-    "rag:ingest": "npx tsx scripts/ingest-rag.ts"
+    "rag:extract": "npx tsx scripts/rag/extract.ts",
+    "rag:ocr": "npx tsx scripts/rag/ocr.ts",
+    "rag:manifest": "npx tsx scripts/rag/manifest.ts",
+    "rag:chunk": "npx tsx scripts/rag/chunk.ts",
+    "rag:index": "npx tsx scripts/rag/index.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
@@ -21,7 +25,6 @@
     "@tailwindcss/typography": "^0.5.19",
     "@types/pdf-parse": "^1.1.5",
     "bcryptjs": "^2.4.3",
-    "chromadb": "^3.4.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dotenv": "^17.4.0",

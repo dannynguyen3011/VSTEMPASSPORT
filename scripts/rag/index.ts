@@ -1,49 +1,98 @@
 /**
- * Stage 5 — Embed chunks and load them into ChromaDB.
+ * Stage 5 — Embed chunks and load them into MongoDB Atlas Vector Search.
  *
- * Run: npx tsx scripts/rag/index.ts
+ * Run: npm run rag:index
  *
- * Embeddings are computed here with OpenAI text-embedding-3-large and passed to
- * Chroma explicitly. That is deliberate: Chroma's own default embedding function
- * is an English model, which retrieves poorly over Vietnamese legal text, and
- * relying on it also requires an extra @chroma-core package the project does not
- * install. Supplying vectors ourselves sidesteps both problems — but it means
- * queries must embed with the same model, so src/backend/rag.ts uses
- * `queryEmbeddings`, never `queryTexts`.
+ * The corpus lives in the same Atlas cluster as the rest of the app's data, so
+ * the whole team and every deployment share one copy. That replaces the earlier
+ * ChromaDB service, which had to be hosted separately and left each developer
+ * with a private corpus on localhost.
  *
- * The collection is recreated on every run. At this corpus size re-embedding
- * costs a few cents and is worth avoiding stale-chunk bugs.
+ * Embeddings are computed here with OpenAI text-embedding-3-large. Queries must
+ * use the same model — src/backend/rag.ts imports the same embeddings module.
+ *
+ * Upserts by chunk id, so re-running after adding documents updates in place
+ * rather than duplicating. Chunks whose source document has disappeared from
+ * the manifest are removed.
  */
 import { config } from 'dotenv'
 config({ path: '.env.local' })
 
 import fs from 'fs'
 import path from 'path'
-import { ChromaClient } from 'chromadb'
+import mongoose from 'mongoose'
 import { EMBEDDING_MODEL, embedTexts } from '../../src/backend/embeddings'
-import { SCHOOLS } from '../../src/shared/schools'
-import type { Chunk } from './types'
+import { RagChunk } from '../../src/backend/db/models/RagChunk'
+import type { Chunk, ManifestEntry } from './types'
 
 const CHUNKS_PATH = path.join(process.cwd(), '.cache', 'rag', 'chunks.json')
-export const COLLECTION_NAME = 'green_stem_corpus'
+const MANIFEST_PATH = path.join(process.cwd(), 'data', 'manifest.json')
+const SCHOOLS_PATH = path.join(process.cwd(), 'src', 'shared', 'schools.ts')
 
+export const VECTOR_INDEX_NAME = 'rag_vector_index'
 const EMBED_BATCH = 96
-const ADD_BATCH = 100
+const WRITE_BATCH = 100
 
-/** Chroma rejects null metadata values, so drop those keys entirely. */
-function cleanMetadata(meta: Chunk['metadata']): Record<string, string | number | boolean> {
-  const out: Record<string, string | number | boolean> = {}
-  for (const [key, value] of Object.entries(meta)) {
-    if (value !== null && value !== undefined && value !== '') out[key] = value
+/**
+ * Warn when manifest school codes and the registry in schools.ts disagree.
+ * They are maintained in different places — the manifest is model-generated,
+ * the registry hand-written — and a mismatch makes metadata filtering match
+ * nothing, which degrades retrieval silently rather than raising an error.
+ */
+function reportSchoolDrift(manifest: ManifestEntry[]) {
+  const inManifest = new Set(manifest.map((e) => e.school).filter(Boolean) as string[])
+  const source = fs.readFileSync(SCHOOLS_PATH, 'utf8')
+  const inRegistry = new Set([...source.matchAll(/code: '([A-Z0-9]+)'/g)].map((m) => m[1]))
+
+  const missingFromRegistry = [...inManifest].filter((c) => !inRegistry.has(c))
+  const unusedInRegistry = [...inRegistry].filter((c) => !inManifest.has(c))
+
+  if (missingFromRegistry.length) {
+    console.log(`  WARNING — in the manifest but not in schools.ts: ${missingFromRegistry.join(', ')}`)
+    console.log('            questions naming these schools will not be filtered')
   }
-  return out
+  if (unusedInRegistry.length) {
+    console.log(`  note — in schools.ts with no indexed documents: ${unusedInRegistry.join(', ')}`)
+  }
+}
+
+/**
+ * Create the Atlas Vector Search index if it is absent.
+ *
+ * `school` and `doc_type` are declared as filter fields so retrieval can narrow
+ * to one school before the vector comparison. Index builds are asynchronous —
+ * the first query after creation may return nothing until it is queryable.
+ */
+async function ensureVectorIndex(dimensions: number) {
+  const collection = mongoose.connection.db!.collection('ragchunks')
+
+  const existing = (await collection.listSearchIndexes().toArray()) as { name: string; status?: string }[]
+  const found = existing.find((i) => i.name === VECTOR_INDEX_NAME)
+  if (found) {
+    console.log(`  vector index "${VECTOR_INDEX_NAME}" already exists (status: ${found.status ?? 'unknown'})`)
+    return
+  }
+
+  console.log(`  creating vector index "${VECTOR_INDEX_NAME}" (${dimensions} dimensions)...`)
+  await collection.createSearchIndex({
+    name: VECTOR_INDEX_NAME,
+    type: 'vectorSearch',
+    definition: {
+      fields: [
+        { type: 'vector', path: 'embedding', numDimensions: dimensions, similarity: 'cosine' },
+        { type: 'filter', path: 'school' },
+        { type: 'filter', path: 'doc_type' },
+      ],
+    },
+  })
+  console.log('  created — Atlas builds it in the background, usually under a minute')
 }
 
 async function main() {
-  console.log('Stage 5 — embed + index')
+  console.log('Stage 5 — embed + index into MongoDB Atlas')
 
   if (!fs.existsSync(CHUNKS_PATH)) {
-    console.error('No chunks found. Run scripts/rag/chunk.ts first.')
+    console.error('No chunks found. Run npm run rag:chunk first.')
     process.exit(1)
   }
   const chunks = JSON.parse(fs.readFileSync(CHUNKS_PATH, 'utf8')) as Chunk[]
@@ -51,17 +100,17 @@ async function main() {
     console.error('chunks.json is empty.')
     process.exit(1)
   }
+  const manifest = JSON.parse(fs.readFileSync(MANIFEST_PATH, 'utf8')) as ManifestEntry[]
 
-  const chromaUrl = process.env.CHROMA_URL ?? 'http://localhost:8000'
-  const client = new ChromaClient({ path: chromaUrl })
-  try {
-    await client.heartbeat()
-  } catch {
-    console.error(`Cannot reach ChromaDB at ${chromaUrl}. Start it with: docker compose up chromadb`)
+  const uri = process.env.MONGODB_URI
+  if (!uri) {
+    console.error('MONGODB_URI is not set in .env.local')
     process.exit(1)
   }
+  await mongoose.connect(uri)
+  console.log(`  ${chunks.length} chunks | ${EMBEDDING_MODEL} | db ${mongoose.connection.name}`)
 
-  console.log(`  ${chunks.length} chunks | ${EMBEDDING_MODEL} | chroma ${chromaUrl}`)
+  reportSchoolDrift(manifest)
 
   console.log('  embedding...')
   const embeddings: number[][] = []
@@ -70,62 +119,59 @@ async function main() {
     embeddings.push(...(await embedTexts(batch.map((c) => c.text))))
     process.stdout.write(`\r    ${Math.min(i + EMBED_BATCH, chunks.length)}/${chunks.length}`)
   }
-  console.log(`\n    ${embeddings[0].length} dimensions`)
+  const dimensions = embeddings[0].length
+  console.log(`\n    ${dimensions} dimensions`)
 
-  try {
-    await client.deleteCollection({ name: COLLECTION_NAME })
-    console.log('  dropped existing collection')
-  } catch {
-    // Nothing to drop on a first run.
+  console.log('  writing...')
+  const now = new Date()
+  for (let i = 0; i < chunks.length; i += WRITE_BATCH) {
+    const slice = chunks.slice(i, i + WRITE_BATCH)
+    await RagChunk.bulkWrite(
+      slice.map((chunk, j) => ({
+        updateOne: {
+          filter: { _id: chunk.id },
+          update: {
+            $set: {
+              text: chunk.text,
+              embedding: embeddings[i + j],
+              sha256: chunk.metadata.sha256,
+              file: chunk.metadata.file,
+              title: chunk.metadata.title,
+              doc_type: chunk.metadata.docType,
+              school: chunk.metadata.school,
+              authority: chunk.metadata.authority,
+              doc_number: chunk.metadata.docNumber,
+              issue_date: chunk.metadata.issueDate,
+              page: chunk.metadata.page,
+              section_path: chunk.metadata.sectionPath,
+              indexed_at: now,
+            },
+          },
+          upsert: true,
+        },
+      })),
+      { ordered: false }
+    )
+    process.stdout.write(`\r    ${Math.min(i + WRITE_BATCH, chunks.length)}/${chunks.length}`)
   }
-  const collection = await client.createCollection({
-    name: COLLECTION_NAME,
-    metadata: {
-      description: 'Green STEM Compass — tuyển sinh corpus',
-      embedding_model: EMBEDDING_MODEL,
-      indexed_at: new Date().toISOString(),
-    },
-  })
+  console.log()
 
-  console.log('  indexing...')
-  for (let i = 0; i < chunks.length; i += ADD_BATCH) {
-    const batch = chunks.slice(i, i + ADD_BATCH)
-    await collection.add({
-      ids: batch.map((c) => c.id),
-      documents: batch.map((c) => c.text),
-      embeddings: embeddings.slice(i, i + ADD_BATCH),
-      metadatas: batch.map((c) => cleanMetadata(c.metadata)),
-    })
-    process.stdout.write(`\r    ${Math.min(i + ADD_BATCH, chunks.length)}/${chunks.length}`)
-  }
+  // Drop chunks left over from documents that are no longer in the corpus.
+  const stale = await RagChunk.deleteMany({ _id: { $nin: chunks.map((c) => c.id) } })
+  if (stale.deletedCount) console.log(`  removed ${stale.deletedCount} stale chunks`)
 
-  const count = await collection.count()
+  await ensureVectorIndex(dimensions)
+
+  const total = await RagChunk.countDocuments()
   const schools = [...new Set(chunks.map((c) => c.metadata.school).filter(Boolean))].sort()
-  console.log(`\n\n  indexed ${count} chunks into "${COLLECTION_NAME}"`)
+  console.log(`\n  ${total} chunks in "ragchunks"`)
   console.log(`  schools: ${schools.length} — ${schools.join(', ')}`)
 
-  // The indexed codes come from data/manifest.json (model-generated, then
-  // reviewed); the query-time codes come from the hand-written registry. They
-  // drift silently — a school in the index but not the registry is never
-  // filtered for, and one in the registry but not the index filters to nothing.
-  const registered = new Set(SCHOOLS.map((s) => s.code))
-  const missingFromRegistry = schools.filter((s) => s && !registered.has(s))
-  const missingFromIndex = [...registered].filter((c) => !schools.includes(c))
-
-  if (missingFromRegistry.length) {
-    console.log(
-      `\n  WARNING — indexed but absent from src/shared/schools.ts: ${missingFromRegistry.join(', ')}` +
-        `\n            questions naming these schools cannot be filtered to them.`
-    )
-  }
-  if (missingFromIndex.length) {
-    console.log(
-      `\n  NOTE — in the registry but no indexed documents: ${missingFromIndex.join(', ')}`
-    )
-  }
+  await mongoose.disconnect()
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error('index failed:', err)
+  await mongoose.disconnect().catch(() => {})
   process.exit(1)
 })

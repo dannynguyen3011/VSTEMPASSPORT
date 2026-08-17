@@ -1,71 +1,78 @@
 /**
- * RAG Chatbot Pipeline — ChromaDB + Claude API
+ * RAG Chatbot Pipeline — MongoDB Atlas Vector Search + OpenAI
  * BA §2.5 — Anti-hallucination: citation required, no out-of-context generation
  *
- * Both retrieval and answering run on OpenAI (see src/backend/openai.ts).
- * Anthropic is still used by the offline ingest scripts under scripts/rag/, but
- * is no longer on the request path.
+ * The corpus lives in the same Atlas cluster as the app's other data (the
+ * `ragchunks` collection, written by scripts/rag/index.ts), so the whole team
+ * and every deployment share one copy. Anthropic is still used by the offline
+ * ingest scripts, but is not on the request path.
  *
- * Retrieval design (see scripts/rag/ for the ingest side):
+ * Retrieval design:
  *
- *  - Vectors are computed with OpenAI text-embedding-3-large via
- *    src/backend/embeddings.ts, the same module the ingest script uses. Chroma
- *    is queried with `queryEmbeddings`; `queryTexts` would make Chroma embed the
- *    query with its own English default model, producing vectors that are not
- *    comparable with the indexed ones.
+ *  - Query vectors come from src/backend/embeddings.ts, the same module the
+ *    ingest script uses. Both sides must use the same embedding model —
+ *    vectors from two models are not comparable, and mixing them fails silently
+ *    as poor retrieval rather than as an error.
  *
  *  - When the question names a school, retrieval is filtered to that school's
  *    documents first. Without the filter a question about HUST competes against
  *    chunks from every other school in the corpus.
  *
- *  - Passages beyond MAX_DISTANCE are dropped. Chroma always returns its
- *    nearest N regardless of how far away they are, so without a threshold the
- *    "no context found" branch below could never fire once the corpus is
- *    populated, and Claude would be handed irrelevant text for every
- *    off-topic question.
+ *  - Passages below MIN_SCORE are dropped. $vectorSearch returns its nearest N
+ *    regardless of how unrelated they are, so without a floor the "no context
+ *    found" branch below could never fire once the corpus is populated, and the
+ *    model would be handed irrelevant text for every off-topic question.
  */
-import { ChromaClient, Collection } from 'chromadb'
+import { connectDB } from './db/mongoose'
+import { RagChunk } from './db/models/RagChunk'
 import { embedQuery } from './embeddings'
 import { CHAT_MODEL, getOpenAI } from './openai'
 import { detectSchools } from '@/shared/schools'
 
-const COLLECTION_NAME = 'green_stem_corpus'
+const VECTOR_INDEX_NAME = 'rag_vector_index'
 const TOP_K = 8
 
 /**
- * Maximum acceptable vector distance. Calibrated against this corpus:
- * on-topic questions land at 0.62–0.90, clearly off-topic ones at 1.21–1.47.
- * 1.05 sits in the empty band between them.
+ * How many candidates Atlas considers before returning TOP_K. Atlas recommends
+ * roughly 10-20x the limit; too low and the approximate search misses good
+ * matches, too high and it costs latency for no gain.
  */
-const MAX_DISTANCE = 1.05
+const NUM_CANDIDATES = TOP_K * 20
 
-let _chroma: ChromaClient | null = null
-let _collection: Collection | null = null
+/**
+ * Minimum cosine similarity for an unfiltered search. $vectorSearch scores in
+ * [0,1], higher being more similar. Measured on this corpus, taking the weakest
+ * of the top 8 hits per question:
+ *
+ *   on-topic    0.767 – 0.848
+ *   off-topic   0.624 – 0.697   ("cách nấu phở", "giá Bitcoin", …)
+ *
+ * 0.73 sits in the empty band between them. This cannot be derived from the
+ * distance threshold the corpus was previously tuned against: converting that
+ * boundary arithmetically gives 0.475, which every off-topic question above
+ * clears comfortably — the fallback would never fire.
+ */
+const MIN_SCORE_BROAD = 0.73
 
-function getChromaClient(): ChromaClient {
-  if (!_chroma) {
-    _chroma = new ChromaClient({
-      path: process.env.CHROMA_URL ?? 'http://localhost:8000',
-    })
-  }
-  return _chroma
-}
-
-async function getCollection(): Promise<Collection | null> {
-  if (_collection) return _collection
-  try {
-    const client = getChromaClient()
-    // getCollection, not getOrCreateCollection: an empty auto-created collection
-    // would silently look like "no results" instead of "corpus not indexed".
-    _collection = await client.getCollection({ name: COLLECTION_NAME })
-    return _collection
-  } catch {
-    console.error(
-      `[rag] collection "${COLLECTION_NAME}" not found — run: npx tsx scripts/rag/index.ts`
-    )
-    return null
-  }
-}
+/**
+ * Minimum similarity when a school filter is in play — deliberately much lower.
+ *
+ * Similarity scales with how much the query says, not only with how relevant
+ * the hits are. Bare school names, which students really do type, score far
+ * below full questions even though the passages returned are correct:
+ *
+ *   "hust"                        0.545 – 0.558
+ *   "vinuni"                      0.664 – 0.685
+ *   "vinuni tuyển sinh"           0.783 – 0.806
+ *   "VinUni tuyển sinh thế nào?"  0.796 – 0.832
+ *
+ * Under MIN_SCORE_BROAD every one-word query returned nothing. Once the filter
+ * has restricted results to the named school, precision is already handled by
+ * metadata, so the semantic floor only needs to catch genuine nonsense. An
+ * off-topic question names no school, matches no alias, and so is still judged
+ * by the strict threshold above.
+ */
+const MIN_SCORE_FILTERED = 0.5
 
 export interface RagChunk {
   content: string
@@ -75,7 +82,20 @@ export interface RagChunk {
   school: string | null
   docNumber: string | null
   sectionPath: string | null
-  distance: number
+  /** Cosine similarity in [0,1]; higher is more relevant. */
+  score: number
+}
+
+/** Shape returned by the $vectorSearch pipeline below. */
+interface VectorHit {
+  text: string
+  title?: string
+  page?: number | null
+  issue_date?: string | null
+  school?: string | null
+  doc_number?: string | null
+  section_path?: string | null
+  score: number
 }
 
 /** Human-readable citation, degrading gracefully when fields are missing. */
@@ -87,52 +107,73 @@ export function formatCitation(chunk: RagChunk): string {
   return parts.join(', ')
 }
 
+async function runVectorSearch(
+  queryVector: number[],
+  schools: string[]
+): Promise<VectorHit[]> {
+  return RagChunk.aggregate<VectorHit>([
+    {
+      $vectorSearch: {
+        index: VECTOR_INDEX_NAME,
+        path: 'embedding',
+        queryVector,
+        numCandidates: NUM_CANDIDATES,
+        limit: TOP_K,
+        ...(schools.length > 0 ? { filter: { school: { $in: schools } } } : {}),
+      },
+    },
+    {
+      $project: {
+        _id: 0,
+        text: 1,
+        title: 1,
+        page: 1,
+        issue_date: 1,
+        school: 1,
+        doc_number: 1,
+        section_path: 1,
+        score: { $meta: 'vectorSearchScore' },
+      },
+    },
+  ])
+}
+
 /**
  * Retrieve the most relevant passages for a question.
- * Returns an empty array when nothing clears MAX_DISTANCE, or when ChromaDB is
+ * Returns an empty array when nothing clears MIN_SCORE, or when the corpus is
  * unreachable — callers treat both as "no grounded answer available".
  */
 export async function retrievePassages(question: string): Promise<RagChunk[]> {
   try {
-    const collection = await getCollection()
-    if (!collection) return []
+    await connectDB()
 
     const schools = detectSchools(question)
-    const queryEmbeddings = [await embedQuery(question)]
-    const where = schools.length > 0 ? { school: { $in: schools } } : undefined
+    const queryVector = await embedQuery(question)
 
-    let results = await collection.query({ queryEmbeddings, nResults: TOP_K, where })
+    let hits = await runVectorSearch(queryVector, schools)
+    let filtered = schools.length > 0
 
     // A named school with no indexed documents yields nothing. Retry unfiltered
     // so a general answer is still possible rather than a flat "not found".
-    const gotNothing = (results.documents?.[0] ?? []).length === 0
-    if (gotNothing && where) {
-      results = await collection.query({ queryEmbeddings, nResults: TOP_K })
+    if (hits.length === 0 && filtered) {
+      hits = await runVectorSearch(queryVector, [])
+      filtered = false
     }
 
-    const docs = results.documents?.[0] ?? []
-    const metas = results.metadatas?.[0] ?? []
-    const distances = results.distances?.[0] ?? []
+    const floor = filtered ? MIN_SCORE_FILTERED : MIN_SCORE_BROAD
 
-    const chunks: RagChunk[] = []
-    for (let i = 0; i < docs.length; i++) {
-      const doc = docs[i]
-      const distance = distances[i] ?? Number.POSITIVE_INFINITY
-      if (!doc || distance > MAX_DISTANCE) continue
-
-      const meta = (metas[i] ?? {}) as Record<string, string | number>
-      chunks.push({
-        content: doc,
-        source: String(meta.title ?? 'Tài liệu không xác định'),
-        page: meta.page != null ? String(meta.page) : '?',
-        date: meta.issueDate != null ? String(meta.issueDate) : '?',
-        school: meta.school != null ? String(meta.school) : null,
-        docNumber: meta.docNumber != null ? String(meta.docNumber) : null,
-        sectionPath: meta.sectionPath != null ? String(meta.sectionPath) : null,
-        distance,
-      })
-    }
-    return chunks
+    return hits
+      .filter((h) => h.text && h.score >= floor)
+      .map((h) => ({
+        content: h.text,
+        source: h.title ?? 'Tài liệu không xác định',
+        page: h.page != null ? String(h.page) : '?',
+        date: h.issue_date ?? '?',
+        school: h.school ?? null,
+        docNumber: h.doc_number ?? null,
+        sectionPath: h.section_path ?? null,
+        score: h.score,
+      }))
   } catch (err) {
     console.error('[rag] retrieval failed:', err)
     return []

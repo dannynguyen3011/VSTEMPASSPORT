@@ -1,8 +1,9 @@
 /**
  * School registry for the RAG chatbot.
  *
- * `code` matches the `school` field written into Chroma metadata by
- * scripts/rag/chunk.ts, so these codes are what metadata filters key on.
+ * `code` matches the `school` field written into the ragchunks collection by
+ * scripts/rag/index.ts, so these codes are what the $vectorSearch filter keys
+ * on. scripts/rag/index.ts reports drift between the two on every run.
  * `aliases` are matched against the user's question to decide which school a
  * question is about — they must be lowercase and unaccented, because
  * detectSchools() strips diacritics before comparing (students routinely type

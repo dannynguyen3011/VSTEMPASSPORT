@@ -56,4 +56,5 @@ docker-compose*.yml
 # Misc
 .eslintcache
 *.log
-corpus
+data
+.cache
