@@ -21,32 +21,10 @@ services:
       - /app/node_modules
       - /app/.next
     env_file:
+      # MONGODB_URI points at Atlas, which holds both the app data and the RAG
+      # corpus (the `ragchunks` collection). Nothing here needs overriding for
+      # the container — there is no local vector store any more.
       - .env.local
-    environment:
-      # Override CHROMA_URL trong container để trỏ sang service chromadb
-      # (override giá trị Railway URL trong .env.local khi chạy local)
-      - CHROMA_URL=http://chromadb:8000
-    depends_on:
-      chromadb:
-        # service_started thay vì service_healthy vì image chromadb/chroma
-        # rất minimal — không có curl/wget/python để chạy healthcheck từ trong
-        # container. App có retry logic riêng khi gọi Chroma.
-        condition: service_started
-    restart: unless-stopped
-
-  # ─── ChromaDB (vector store cho RAG) ──────────────────────────────────────
-  chromadb:
-    image: chromadb/chroma:latest
-    container_name: greenstem-chromadb
-    ports:
-      - "8000:8000"
-    volumes:
-      # Persist data giữa các lần restart
-      - chroma_data:/chroma/chroma
-    environment:
-      - IS_PERSISTENT=TRUE
-      - ANONYMIZED_TELEMETRY=FALSE
-      - ALLOW_RESET=TRUE
     restart: unless-stopped
 
   # ─── Rocket.Chat (team chat platform) ─────────────────────────────────────
@@ -77,6 +55,12 @@ services:
     container_name: greenstem-mongodb
     restart: unless-stopped
     command: ["--replSet", "rs0", "--oplogSize", "128", "--bind_ip_all"]
+    ports:
+      # Exposed so `npm run dev` on the host can reach it for app auth/data.
+      # The replica set advertises itself as "mongodb:27017", a name that only
+      # resolves inside the compose network, so host connection strings need
+      # ?directConnection=true to skip topology discovery.
+      - "27017:27017"
     volumes:
       - mongo_data:/data/db
       - mongo_config:/data/configdb
@@ -100,8 +84,6 @@ services:
       "try { rs.status() } catch(e) { rs.initiate({_id: 'rs0', members: [{_id: 0, host: 'mongodb:27017'}]}) }"
 
 volumes:
-  chroma_data:
-    driver: local
   mongo_data:
     driver: local
   mongo_config:

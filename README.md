@@ -26,28 +26,26 @@ flowchart TB
 
     subgraph Mongo["🗄 MongoDB Atlas"]
         AUTH["Custom JWT Auth<br/>bcrypt password hashing"]
-        DB[("MongoDB<br/>users · activities<br/>opportunities · trust")]
+        DB[("MongoDB<br/>users · activities · opportunities<br/>ragchunks + Vector Search")]
     end
 
     subgraph AI["🤖 AI / RAG"]
-        CLAUDE["Anthropic Claude<br/>claude-sonnet-4-6"]
-        CHROMA[("ChromaDB on Railway<br/>vector embeddings")]
-        LC["LangChain<br/>+ OpenAI embeddings"]
+        GPT["OpenAI<br/>gpt-4.1 (answers)"]
+        EMB["OpenAI<br/>text-embedding-3-large"]
     end
 
     RS["✉️ Resend<br/>teacher verification"]
-    INGEST["scripts/ingest-rag.ts<br/>(one-off corpus build)"]
+    INGEST["scripts/rag/ — 5 stages<br/>extract · ocr · manifest · chunk · index"]
 
     Client -->|HTTPS| Vercel
     LIB -->|Mongoose ODM| DB
     LIB -->|jsonwebtoken + bcryptjs| AUTH
-    LIB -->|@anthropic-ai/sdk| CLAUDE
-    LIB -->|chromadb client| CHROMA
-    LIB -.->|RAG retrieval| LC
-    LC --> CHROMA
-    CLAUDE -.->|retrieved context| CHROMA
+    LIB -->|openai SDK| GPT
+    LIB -->|embeddings.ts| EMB
+    EMB -.->|query vector| DB
+    DB -.->|$vectorSearch top-K| GPT
     LIB -.->|resend SDK| RS
-    INGEST -.->|PDFs → embeddings| CHROMA
+    INGEST -.->|data/ → chunks → vectors| DB
 ```
 
 ### Request flow examples
@@ -60,7 +58,7 @@ flowchart TB
 **Chatbot query (RAG):**
 1. User asks question in `/chatbot` (React)
 2. `POST /api/chat` with the JWT
-3. Server: verify JWT → embed query (LangChain + OpenAI) → query Chroma for top-K passages → call Claude with passages + chat history → stream response back
+3. Server: verify JWT → detect which school the question names → embed the query (`text-embedding-3-large`) → run `$vectorSearch` over the `ragchunks` collection for top-K passages, filtered to that school and cut off at a relevance threshold → if nothing clears the threshold, return the "no grounded answer" message without calling the model → otherwise call OpenAI with the passages, ready-made citation strings, and chat history → stream the response back
 4. Client renders the markdown reply with `react-markdown`
 
 **Save portfolio activity:**
@@ -83,10 +81,12 @@ flowchart TB
 - **jsonwebtoken** + **bcryptjs** — custom auth: password hashing + stateless JWT sessions (no third-party auth provider)
 
 ### AI / RAG
-- **Anthropic Claude** (`@anthropic-ai/sdk`) — chatbot + Compass analysis
-- **ChromaDB** (`chromadb`) — vector store (hosted on Railway)
-- **LangChain** (`langchain`, `@langchain/openai`) — embeddings + retrieval orchestration
-- **pdf-parse** — PDF text extraction during ingest
+- **OpenAI** (`openai`) — chatbot answers (`gpt-4.1` by default) and `text-embedding-3-large` vectors for both indexing and queries
+- **MongoDB Atlas Vector Search** — the corpus lives in the `ragchunks` collection of the same cluster as the app data, so the team and every deployment share one copy with no extra service to host
+- **Anthropic Claude** (`@anthropic-ai/sdk`) — offline ingest only: transcribing scanned PDFs and reading document metadata. Not on the request path
+- **pdf-parse** — per-page PDF text extraction and page rendering during ingest
+- **mammoth** — DOCX text extraction
+- **sharp** — page image compression before OCR
 
 ### UI
 - **Tailwind CSS** + `tailwindcss-animate` + `@tailwindcss/typography`
@@ -111,7 +111,6 @@ flowchart TB
 
 ### Hosting
 - **Vercel** — hosts the Next.js app, auto-deploys from `main`
-- **Railway** — hosts ChromaDB Docker container
 - **MongoDB Atlas** — managed database, free M0 tier is enough to start
 
 ---
@@ -140,7 +139,7 @@ src/
 │   ├── api/                 # BACKEND — Next.js API routes
 │   │   ├── profile/         # GET/POST/PUT user profile
 │   │   ├── activities/      # GET/POST/DELETE portfolio activities
-│   │   ├── chat/            # POST — Claude RAG chatbot endpoint
+│   │   ├── chat/            # POST — RAG chatbot endpoint (OpenAI + Atlas Vector Search)
 │   │   ├── opportunities/   # GET opportunities list
 │   │   ├── mentor/          # GET mentors, POST connection request
 │   │   ├── ocs/calculate/   # POST — Overall Competency Score calculation
@@ -163,7 +162,9 @@ src/
 │   │   ├── mongoose.ts      # BACKEND — cached MongoDB connection singleton
 │   │   └── models/          # BACKEND — Mongoose schemas (User, Activity, Opportunity, ...)
 │   ├── auth.ts              # BACKEND — JWT sign/verify + requireAuth()/isAdmin() helpers
-│   ├── rag.ts                # AI RAG — document retrieval from Chroma
+│   ├── rag.ts                # AI RAG — retrieval + answer streaming
+│   ├── embeddings.ts         # AI RAG — shared OpenAI embedding client
+│   ├── openai.ts             # AI RAG — shared OpenAI client + chat model choice
 │   ├── nlp-tagger.ts         # AI — auto-tags activities with tech keywords
 │   └── rocketchat.ts         # BACKEND — optional admin notification webhook
 │
@@ -211,19 +212,41 @@ Responsibilities:
 
 ## AI / RAG
 
-Files: `src/backend/rag.ts`, `src/backend/nlp-tagger.ts`, `src/app/api/chat/route.ts`, `scripts/ingest-rag.ts`
+### Query path
 
-- **`rag.ts`** — connects to Chroma, retrieves relevant chunks for a query (university admission docs, scholarship info)
-- **`nlp-tagger.ts`** — keyword-tags portfolio activities with tech/skill labels
-- **`api/chat/route.ts`** — orchestrates the RAG pipeline:
-  1. Take user message + profile context
-  2. Retrieve top-K chunks from Chroma
-  3. Build a prompt with context + chat history
-  4. Call Claude (`claude-sonnet-4-6`) via the Anthropic SDK
-  5. Stream response with cited sources
-- **`scripts/ingest-rag.ts`** — one-off: reads PDFs from `corpus/`, chunks them, embeds, uploads to Chroma
+Files: `src/backend/rag.ts`, `src/backend/embeddings.ts`, `src/backend/openai.ts`, `src/shared/schools.ts`, `src/app/api/chat/route.ts`
 
-To use the chatbot in production, ChromaDB must be deployed (Railway in this project) and `CHROMA_URL` set in environment variables. The corpus is populated by running `npm run rag:ingest` locally after placing the source PDFs in `corpus/`.
+- **`rag.ts`** — retrieval and answering. Three details matter:
+  - The query is embedded with `text-embedding-3-large`, the same model the ingest uses. Vectors from two different models are not comparable, and mixing them fails silently as poor retrieval rather than as an error.
+  - When the question names a school, retrieval filters to that school's documents first, so a HUST question doesn't compete against 24 other schools' chunks.
+  - Passages below a similarity floor are dropped. `$vectorSearch` returns its nearest N no matter how unrelated they are, so without the cutoff the "no grounded answer" branch could never fire and the model would be handed irrelevant text for every off-topic question. Measured on this corpus, on-topic questions score 0.767–0.848 and clearly off-topic ones 0.624–0.697, so the floor sits at 0.73. **Re-measure it if the embedding model changes** — the value cannot be carried over or derived arithmetically.
+- **`schools.ts`** — school registry and alias matching. Codes must match the `school` values in `data/manifest.json`; `scripts/rag/index.ts` diffs the two on every run and reports drift.
+- **`api/chat/route.ts`** — auth, validation, streaming. Scope comes from the corpus, not from a keyword blocklist: a school with no indexed documents simply retrieves nothing.
+- **`nlp-tagger.ts`** — keyword-tags portfolio activities with tech/skill labels (unrelated to the chatbot).
+
+### Ingest pipeline
+
+Source documents live in `data/` (git-ignored — they are large binaries). Five stages under `scripts/rag/`, each writing to `.cache/rag/` so any stage can be re-run alone:
+
+| Stage | Command | What it does |
+|---|---|---|
+| 1 | `npm run rag:extract` | Per-format adapters → per-page text. Deduplicates by content hash; flags PDFs with no text layer |
+| 2 | `npm run rag:ocr` | Renders scanned pages to JPEG and transcribes them with Claude vision via the Batch API. Run twice: once to submit, once to collect |
+| 3 | `npm run rag:manifest` | Bootstraps `data/manifest.json` by reading each document's letterhead. **Review this by hand** — every citation is built from it |
+| 4 | `npm run rag:chunk` | Splits on `Chương`/`Điều` and section headings, prefixes each chunk with its document and section for the embedding |
+| 5 | `npm run rag:index` | Embeds and upserts into the `ragchunks` collection, creates the Atlas vector index if absent, and drops chunks whose source document left the corpus |
+
+`data/manifest.json` **is** tracked, unlike the documents themselves: it is curated metadata, and regenerating it means redoing the human review.
+
+Only stages 2 and 3 need `ANTHROPIC_API_KEY`; stage 5 needs `OPENAI_API_KEY`.
+
+### Where the corpus lives
+
+`ragchunks` sits in the same Atlas cluster as the app's other collections, so running stage 5 once publishes the corpus to everyone — teammates and every deployment read the same copy. There is no separate vector-store service to host and no separate deploy step.
+
+The vector index (`rag_vector_index`) is created automatically by stage 5 on first run. Atlas builds it in the background; queries return nothing until it reports `queryable: true`, usually within a minute.
+
+At 1,398 chunks the corpus takes about 58 MB of the 512 MB free tier.
 
 ---
 
@@ -246,41 +269,38 @@ npm run dev
 
 4. Open `http://localhost:3000/register` and create an account — no separate database migration step is needed (MongoDB is schemaless; Mongoose creates collections/indexes on first write).
 
-For the RAG chatbot, after setting `CHROMA_URL`:
+For the RAG chatbot, build the corpus. Put the source documents (PDF/DOCX) in `data/`, then run the five ingest stages — see AI / RAG above for what each does:
 
 ```bash
-# Place admission PDFs in ./corpus/, then:
-npm run rag:ingest
+npm run rag:extract
+npm run rag:ocr        # twice: submit, then collect. Skip if no scanned PDFs
+npm run rag:manifest   # then review data/manifest.json by hand
+npm run rag:chunk
+npm run rag:index
 ```
 
 ---
 
 ## Running with Docker
 
-The project ships with a multi-stage production `Dockerfile`, a `Dockerfile.dev` for hot reload, and a `docker-compose.yml` that spins up the Next.js app + ChromaDB locally.
+The project ships with a multi-stage production `Dockerfile`, a `Dockerfile.dev` for hot reload, and and a `docker-compose.yml` for running the app in a container.
 
 ### Local development (recommended)
 
-Brings up Next.js (hot reload) + ChromaDB with a persistent volume. The compose file overrides `CHROMA_URL` to point at the local `chromadb` service, so you don't need to change your `.env.local`. The app's own database is always MongoDB Atlas (cloud) — `MONGODB_URI` in `.env.local` is used as-is inside the container, Docker doesn't change that.
+Brings up Next.js with hot reload. Both the app data and the RAG corpus live in MongoDB Atlas (cloud), so `.env.local` is used as-is inside the container — there is no local datastore to point at.
 
 ```bash
 cp .env.example .env.local   # fill in MONGODB_URI, JWT_SECRET, Anthropic keys
-docker compose up app chromadb   # build + start just the app + Chroma
+docker compose up app          # build + start the app
 # App: http://localhost:3000
-# Chroma: http://localhost:8000/api/v2/heartbeat
 
 docker compose logs -f app   # tail app logs
-docker compose down          # stop (keeps chroma_data volume)
-docker compose down -v       # stop AND wipe Chroma data
+docker compose down          # stop
 ```
 
 The compose file also defines `mongodb`, `mongodb-init`, and `rocketchat` services — those back an optional, unrelated admin-notification feature (Rocket.Chat), not the app's own database. Add them to the `up` command (or run `docker compose up` with no service list) only if you want that feature too; see `docs/rocketchat.md`.
 
-To ingest the RAG corpus into the local Chroma (after placing PDFs in `./corpus/`):
-
-```bash
-docker compose exec app npm run rag:ingest
-```
+The ingest stages are host-side tooling, not part of the container — run them with `npm run rag:*` as described above. They write to Atlas, so the container sees the result without any extra step.
 
 ### Production image
 
@@ -305,8 +325,8 @@ docker build --network=host -t greenstem .
 |------|---------|
 | `Dockerfile` | Multi-stage production build (deps → builder → runner) |
 | `Dockerfile.dev` | Development image used by `docker compose` for hot reload |
-| `docker-compose.yml` | Local stack: Next.js + ChromaDB with persistent volume |
-| `.dockerignore` | Excludes `node_modules`, `.env*`, `.next`, `corpus/`, etc. |
+| `docker-compose.yml` | Local app container, plus optional Rocket.Chat + MongoDB services |
+| `.dockerignore` | Excludes `node_modules`, `.env*`, `.next`, `data/`, etc. |
 
 ---
 
@@ -317,8 +337,9 @@ docker build --network=host -t greenstem .
 | `MONGODB_URI` | MongoDB Atlas connection string (same cluster for local dev and production) |
 | `JWT_SECRET` | Long random secret used to sign/verify auth JWTs — keep it secret, never commit it |
 | `JWT_EXPIRES_IN` | JWT session lifetime, e.g. `7d` |
-| `ANTHROPIC_API_KEY` | Anthropic API key for Claude |
-| `CHROMA_URL` | ChromaDB URL (Railway public domain) |
+| `OPENAI_API_KEY` | **Required for the chatbot.** One key covers both answer generation and the retrieval embeddings |
+| `OPENAI_CHAT_MODEL` | Optional. Defaults to `gpt-4.1` — see `src/backend/openai.ts` for why a reasoning model is not the default |
+| `ANTHROPIC_API_KEY` | Offline ingest only (OCR + document metadata). The running app never calls Anthropic |
 | `NEXT_PUBLIC_APP_URL` | Deployed app URL |
 | `RAG_DATA_FRESHNESS_DATE` | Date shown in chatbot "data current as of" disclaimer |
 | `ADMIN_USER_IDS` | Comma-separated MongoDB `_id` strings (from the `users` collection) with admin access |
@@ -329,8 +350,8 @@ docker build --network=host -t greenstem .
 
 ## Deployment
 
-Deployed on **Vercel** (Next.js app), **MongoDB Atlas** (database), and **Railway** (ChromaDB).
+Deployed on **Vercel** (Next.js app) and **MongoDB Atlas** (app data + RAG corpus).
 
-- **Vercel** — every push to `main` triggers an automatic redeployment. Set `MONGODB_URI`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `ANTHROPIC_API_KEY`, `CHROMA_URL`, `ADMIN_USER_IDS`, and the rest of the table above as Vercel project environment variables (Project Settings → Environment Variables).
+- **Vercel** — every push to `main` triggers an automatic redeployment. Set `MONGODB_URI`, `JWT_SECRET`, `JWT_EXPIRES_IN`, `OPENAI_API_KEY`, `ADMIN_USER_IDS`, and the rest of the table above as Vercel project environment variables (Project Settings → Environment Variables). `OPENAI_API_KEY` is required — without it `/api/chat` returns 500. `ANTHROPIC_API_KEY` is not needed in production; it is only used by the local ingest scripts.
+- **The corpus ships with the database, not the code.** Because `ragchunks` lives in the same Atlas cluster, a deployment picks it up automatically — no separate publish step.
 - **MongoDB Atlas** — under Network Access, allow access from anywhere (`0.0.0.0/0`); Vercel's serverless functions don't have static outbound IPs on the default tier, so per-IP allowlisting isn't practical here.
-- **Railway** — `chromadb/chroma` Docker image, port `8000`, persistent volume mounted at `/chroma/chroma`, env vars `IS_PERSISTENT=TRUE` and `ANONYMIZED_TELEMETRY=FALSE`

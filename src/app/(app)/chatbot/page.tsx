@@ -2,15 +2,29 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Topbar } from '@/components/shared/Topbar'
+import { getSession } from '@/shared/auth-client'
 import { DEMO_CHAT } from '@/shared/constants'
-import type { ChatMessage } from '@/types'
+import type { ChatMessage, Citation } from '@/types'
 import { SendHorizonal } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 
-const SUPPORTED_SCHOOLS = ['vinuni', 'hust', 'usth', 'vju', 'fulbright', 'swinburne']
+/**
+ * Signed-in users get real RAG answers from POST /api/chat, streamed token by
+ * token. Signed-out visitors keep the canned DEMO_CHAT walkthrough, matching
+ * how the other pages behave in demo mode.
+ */
 const DATA_REFRESHED_AT = '2026-04-03'
-const NOT_FOUND_MESSAGE = 'Toi khong tim thay thong tin chinh thong cho cau hoi nay.'
+const DEMO_PROMPT_LOGIN =
+  'Bạn đang xem **bản demo** với vài câu trả lời dựng sẵn, nên câu hỏi này chưa có nội dung.\n\n' +
+  'Đăng nhập để hỏi cố vấn AI thật — nó tra cứu trực tiếp đề án tuyển sinh và văn bản pháp quy của 25 trường, và luôn kèm trích dẫn nguồn.'
 const OUT_OF_SCOPE_MESSAGE = 'Hien tai he thong chi ho tro Big 6 Schools.'
+const SUPPORTED_SCHOOLS = ['vinuni', 'hust', 'usth', 'vju', 'fulbright', 'swinburne']
+const ERROR_MESSAGE =
+  'Xin loi, khong the ket noi toi co van AI luc nay. Vui long thu lai sau it phut.'
+/** Turns sent back as context. Server trims again; this just bounds the payload. */
+const HISTORY_TURNS = 8
+/** Per-turn cap, matching the server schema so history can never trip its 422. */
+const MAX_HISTORY_CHARS = 4000
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString('vi-VN', {
@@ -39,12 +53,22 @@ function selectDemoAnswer(question: string): ChatMessage | null {
 }
 
 export default function ChatbotPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>(DEMO_CHAT)
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
+  /** null until the client has read localStorage — avoids a hydration mismatch. */
+  const [isDemo, setIsDemo] = useState<boolean | null>(null)
   const chatContainerRef = useRef<HTMLElement | null>(null)
+  /**
+   * Mirrors `messages` for reads outside the render closure. Streaming rewrites
+   * `messages` on every chunk, so a closure captured when the send started can
+   * be several renders stale — and a `setMessages` updater cannot be used to
+   * read it either, since React runs updaters during the next render, after the
+   * handler has already passed the value along.
+   */
+  const messagesRef = useRef<ChatMessage[]>([])
 
-  const canSend = input.trim().length > 0 && !loading
+  const canSend = input.trim().length > 0 && !loading && isDemo !== null
 
   const latestUpdatedText = useMemo(
     () => `Cap nhat du lieu lan cuoi: ${DATA_REFRESHED_AT}`,
@@ -52,58 +76,150 @@ export default function ChatbotPage() {
   )
 
   useEffect(() => {
+    const demo = !getSession()
+    setIsDemo(demo)
+    // Seed the canned transcript only in demo mode. Sending it as history for a
+    // real user would feed fabricated citations back into the model's context.
+    if (demo) setMessages(DEMO_CHAT)
+  }, [])
+
+  useEffect(() => {
+    messagesRef.current = messages
     if (chatContainerRef.current) {
       chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight
     }
   }, [messages, loading])
 
-  const handleSend = async () => {
-    const question = input.trim()
-    if (!question) return
+  /** Canned answers for signed-out visitors. */
+  const answerFromDemo = async (question: string) => {
+    await new Promise((resolve) => setTimeout(resolve, 500))
 
-    const userMessage: ChatMessage = {
-      id: `user-${Date.now()}`,
-      role: 'user',
-      content: question,
-      citations: [],
-      timestamp: new Date().toISOString(),
+    const outOfScope =
+      !includesSupportedSchool(question) && /truong|dai hoc|university/i.test(question)
+    const demoAnswer = selectDemoAnswer(question)
+
+    // Demo mode only ever had canned answers for a couple of questions. Saying
+    // "no official information found" for everything else reads as a broken
+    // chatbot, when the real cause is simply that nobody is signed in — so say
+    // that instead.
+    const content = outOfScope
+      ? OUT_OF_SCOPE_MESSAGE
+      : demoAnswer
+      ? demoAnswer.content
+      : DEMO_PROMPT_LOGIN
+
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `assistant-${Date.now()}`,
+        role: 'assistant',
+        content: `${content}\n\n${latestUpdatedText}`,
+        citations: outOfScope || !demoAnswer ? [] : demoAnswer.citations,
+        timestamp: new Date().toISOString(),
+      },
+    ])
+  }
+
+  /** Real RAG answer, streamed into a placeholder message as tokens arrive. */
+  const answerFromApi = async (
+    question: string,
+    accessToken: string,
+    history: { role: 'user' | 'assistant'; content: string }[],
+    assistantId: string
+  ) => {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${accessToken}`,
+      },
+      body: JSON.stringify({ question, history }),
+    })
+
+    if (!response.ok || !response.body) {
+      throw new Error(`chat request failed: ${response.status}`)
     }
 
-    setMessages((prev) => [...prev, userMessage])
+    // Citations are known at retrieval time and ride along in a header, so the
+    // cards can render as soon as the first token arrives.
+    let citations: Citation[] = []
+    const encoded = response.headers.get('X-Citations')
+    if (encoded) {
+      try {
+        citations = JSON.parse(
+          new TextDecoder().decode(Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0)))
+        ) as Citation[]
+      } catch {
+        // A malformed header must not cost the user their answer.
+      }
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let content = ''
+
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      content += decoder.decode(value, { stream: true })
+      setMessages((prev) =>
+        prev.map((m) => (m.id === assistantId ? { ...m, content } : m))
+      )
+    }
+
+    setMessages((prev) =>
+      prev.map((m) => (m.id === assistantId ? { ...m, content, citations } : m))
+    )
+  }
+
+  const handleSend = async () => {
+    const question = input.trim()
+    if (!question || loading) return
+
+    const session = getSession()
+    const assistantId = `assistant-${Date.now()}`
+    const stamp = new Date().toISOString()
+
+    /**
+     * Empty and over-long turns are dropped: the server's schema rejects both,
+     * and the 422 surfaces to the user as "cannot reach the AI advisor", which
+     * is not what went wrong. The empty case is real — the streaming
+     * placeholder below starts blank.
+     */
+    const history = messagesRef.current
+      .filter((m) => m.content.trim().length > 0)
+      .slice(-HISTORY_TURNS)
+      .map((m) => ({ role: m.role, content: m.content.slice(0, MAX_HISTORY_CHARS) }))
+
+    setMessages((prev) => {
+      const next = [
+        ...prev,
+        { id: `user-${Date.now()}`, role: 'user' as const, content: question, citations: [], timestamp: stamp },
+      ]
+      // Placeholder the stream writes into.
+      return session
+        ? [...next, { id: assistantId, role: 'assistant' as const, content: '', citations: [], timestamp: stamp }]
+        : next
+    })
+
     setInput('')
     setLoading(true)
 
-    await new Promise((resolve) => setTimeout(resolve, 500))
-
-    const outOfScope = !includesSupportedSchool(question) && /truong|dai hoc|university/i.test(question)
-    const demoAnswer = selectDemoAnswer(question)
-
-    const assistantMessage: ChatMessage = outOfScope
-      ? {
-          id: `assistant-${Date.now()}`,
-          role: 'assistant',
-          content: `${OUT_OF_SCOPE_MESSAGE}\n\n${latestUpdatedText}`,
-          citations: [],
-          timestamp: new Date().toISOString(),
-        }
-      : demoAnswer
-      ? {
-          id: `assistant-${Date.now()}`,
-          role: 'assistant',
-          content: `${demoAnswer.content}\n\n${latestUpdatedText}`,
-          citations: demoAnswer.citations,
-          timestamp: new Date().toISOString(),
-        }
-      : {
-          id: `assistant-${Date.now()}`,
-          role: 'assistant',
-          content: `${NOT_FOUND_MESSAGE}\n\n${latestUpdatedText}`,
-          citations: [],
-          timestamp: new Date().toISOString(),
-        }
-
-    setMessages((prev) => [...prev, assistantMessage])
-    setLoading(false)
+    try {
+      if (session) await answerFromApi(question, session.access_token, history, assistantId)
+      else await answerFromDemo(question)
+    } catch (error) {
+      console.error('[chatbot]', error)
+      // Fill the placeholder rather than appending, so a failed turn does not
+      // leave an empty bubble sitting above the error.
+      setMessages((prev) =>
+        prev.some((m) => m.id === assistantId)
+          ? prev.map((m) => (m.id === assistantId ? { ...m, content: ERROR_MESSAGE } : m))
+          : [...prev, { id: `assistant-error-${Date.now()}`, role: 'assistant', content: ERROR_MESSAGE, citations: [], timestamp: new Date().toISOString() }]
+      )
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -181,7 +297,9 @@ export default function ChatbotPage() {
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault()
-                    void handleSend()
+                    // Same guard as the button — Enter previously bypassed it,
+                    // so holding it during a slow answer queued extra sends.
+                    if (canSend) void handleSend()
                   }
                 }}
                 placeholder="Nhap cau hoi ve Big 6, SAT, GPA, IELTS, portfolio..."
