@@ -46,3 +46,6 @@ next-env.d.ts
 # ignored directory, so `data/` would make the negation below unreachable.
 data/*
 !data/manifest.json
+
+# Local Claude Code tooling config — not part of the project
+.claude/
